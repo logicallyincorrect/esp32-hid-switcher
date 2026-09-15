@@ -1,129 +1,86 @@
-# ESP32-S3 USB to BLE Keyboard Bridge
+# ESP32-S3 USB to BLE HID Switcher
 
-Transform any USB keyboard into a Bluetooth wireless keyboard using ESP32-S3's native USB-OTG hardware.
+Connect a USB keyboard and relative mouse to an ESP32-S3, then switch both between up to three Bluetooth computers without rebooting. It includes USB hub support, persistent simultaneous BLE connections, configuration over BLE and Wi-Fi, and diagnostics.
 
-## What This Does
+## Hardware and pairing
 
-```
-┌─────────────┐     USB-C OTG     ┌────────────┐     Bluetooth     ┌──────────────┐
-│ USB Keyboard│ ◄──────────────►  │ ESP32-S3   │ ◄───────────────► │ PC / Phone   │
-└─────────────┘                   └────────────┘                   └──────────────┘
-```
+- Use an ESP32-S3 with native USB OTG. A USB-to-UART chip such as CH340 does not provide USB host support.
+- This build targets a Freenove ESP32-S3 with **16 MB flash and 8 MB PSRAM**. Adjust board memory, partition layout, and LED pins before using other hardware.
+- Connect a keyboard and mouse through a USB hub to the native USB/OTG port. A powered hub avoids relying on the development board for peripheral power. The separate UART/COM port is used for power, logs, and flashing.
+- Select slot 1 and pair **HID SWITCHER BLE** on the first computer. Select slots 2 and 3 before pairing the other computers.
 
-Plug a USB keyboard into ESP32-S3's USB-C port and it becomes a Bluetooth keyboard that can connect to any BLE-compatible device (Windows, macOS, Linux, iOS, Android).
+| Shortcut | Action |
+| --- | --- |
+| Ctrl + Command + 1 / 2 / 3 | Select that slot, including an empty slot for pairing |
+| Ctrl + Command + Tab | Cycle forward through connected slots, wrapping and skipping disconnected computers |
 
-## Features
+Either side's Control and GUI modifier is accepted; GUI is Command on macOS and the Windows/Super key on other keyboards. Release the full shortcut before repeating. With no alternative connected computer, cycling leaves the selection unchanged. Switching releases held keys and mouse buttons; a mouse button held across a switch is suppressed until released. Input for an offline selected computer is discarded.
 
-- **Native USB Host** - Uses ESP32-S3's hardware USB-OTG (no software emulation)
-- **Multi-Device Support** - Switch between 3 paired devices with a key combo
-- **Low Latency** - Direct HID report forwarding
-- **Universal Compatibility** - Works with Windows, macOS, Linux, iOS, Android, Smart TVs
+GPIO2 pulses the selected slot number. RGB48 uses blue/green/purple for slots 1/2/3; steady means keyboard-ready, blinking means offline/unpaired. Pins are configurable in `src/Config.h`.
 
-## Multi-Device Switching
+## Configure over Bluetooth
 
-You can pair with up to **3 different devices** (e.g., PC, Laptop, Tablet) and switch between them using your keyboard.
+Wi-Fi is **off after every boot**. The macOS CLI uses an encrypted custom service alongside HID:
 
-| Key Combo | Action | Device Name |
-|-----------|--------|-------------|
-| **Scroll Lock + 1** | Switch to Device 1 | `USB-BLE Dev 1` |
-| **Scroll Lock + 2** | Switch to Device 2 | `USB-BLE Dev 2` |
-| **Scroll Lock + 3** | Switch to Device 3 | `USB-BLE Dev 3` |
-
-**How it works:**
-1. Press `Scroll Lock + 1`. Pair "USB-BLE Dev 1" with your first computer.
-2. Press `Scroll Lock + 2`. The connection drops. Pair "USB-BLE Dev 2" with your second device.
-3. Switch back and forth instantly using the key combos!
-4. The active slot is **saved** and restored on reboot.
-5. The **LED** on GPIO 2 blinks to indicate the current slot (1, 2, or 3 blinks).
-
-## USB Keyboard Power
-
-**The USB-C port on most ESP32-S3 boards does NOT output 5V!**
-
-Even if you power the ESP32-S3 from the 5V pin, that power is NOT routed to the USB-C VBUS line.
-
-### Solutions
-
-#### Option 1: Powered USB Hub (Recommended)
-
-Use a powered USB hub between ESP32-S3 and keyboard:
-
-```
-ESP32-S3 USB-C ──► [Powered USB Hub] ──► USB Keyboard
-                         ▲
-                    External 5V
+```sh
+sh cli/build.sh
+cli/build/hid-switcher status
+cli/build/hid-switcher name 1 "Desktop"
+cli/build/hid-switcher move 1 2
+cli/build/hid-switcher ble-name "Desk Switcher"
+cli/build/hid-switcher diagnostics
 ```
 
-#### Option 2: External Power to Keyboard (untested)
+The default Bluetooth name is **HID SWITCHER BLE**. `ble-name` accepts 1–29 UTF-8 bytes, saves the name across reboots, and updates advertising without disconnecting computers or deleting pairings. Computers may display a cached previous name. CLI discovery uses a stable service UUID rather than the name. See [installation, commands, and release packaging](cli/README.md).
 
-Power the keyboard directly, use USB-C only for data:
+## Optional Wi-Fi setup
 
-```
-                      ┌──────────────┐
-    5V Power ─────────┤ USB Breakout ├──── USB Keyboard
-    Supply    GND ────┤    Board     │
-                      └──────┬───────┘
-                             │ D+/D- only (data)
-                      ┌──────┴───────┐
-                      │   ESP32-S3   │
-                      │   USB-C port │
-                      └──────────────┘
-```
+Run `hid-switcher wifi on` to join saved Wi-Fi. With no saved network it opens **Moonlander Setup**, the existing recovery hotspot name. Hold **BOOT for three seconds**, or send `w` over UART at 115200 baud, to open setup manually. The generated hotspot password is printed on UART. Open **http://192.168.4.1** if the captive portal does not appear.
 
-**Steps:**
-1. Cut a USB cable or get a USB breakout board
-2. Connect **5V and GND** from your power supply directly to keyboard's USB power
-3. Connect only **D+ and D-** (data lines) through the ESP32-S3 USB-C port
+Enter a 2.4 GHz Wi-Fi network. The hotspot has no inactivity timeout and closes ten seconds after a successful saved connection. Then open **http://moonlander.local** or the LAN IP shown in the UI. These existing network names remain unchanged when the Bluetooth name changes.
 
-#### Option 3: ESP32-S3-USB-OTG Board
+The page supports Bluetooth naming, computer labels and ordering, selection, connection status, Wi-Fi settings, diagnostics, and firmware updates. Wi-Fi credentials are saved only after connecting; failed attempts retain the previous record. The home network password is not returned through the API or printed in logs.
 
-The **ESP32-S3-USB-OTG** development board has a dedicated USB-A host port with proper 5V output - no modifications needed.
+Run `hid-switcher wifi off` to close Wi-Fi. Rebooting also leaves Wi-Fi off. When enabled, unavailable saved networks cause the recovery hotspot to open after 30 seconds. There is no cloud service.
 
-#### Option 4: Modify DevKit (Advanced)
+## Build and flash
 
-Some boards have solder pads to enable 5V on USB-C. Check your board's schematic for pads labeled "USB_OTG" or similar.
+Use PlatformIO with the pinned pioarduino platform in `platformio.ini`:
 
-## Quick Start
-
-### 1. Clone and Build
-
-```bash
-git clone https://github.com/logicallyincorrect/esp32-hid-switcher
-cd esp32-hid-switcher
-
-# Build with PlatformIO
+```sh
 pio run
-
-# Upload to ESP32-S3
-pio run -t upload
+pio device list
+pio run -t upload --upload-port YOUR_UART_PORT
 ```
 
-## Configuration
+Identify the board and UART port before flashing, especially with multiple ESP32 boards attached. The build uses pioarduino 55.03.311, NimBLE-Arduino 2.5.1, and ArduinoJson 7.4.2. `sdkconfig.hub.defaults` rebuilds the SDK with USB hub support and bootloader rollback. `scripts/embed_setup.py` generates the web page header from `web/index.html`.
 
-### Device Name
+Initial installation requires the bootloader, partition table, OTA boot metadata, and application over USB. The two application slots are 3 MB each; this layout requires 16 MB flash. Do not apply an application-only update to a board with a different partition table. The new BLE identity/slot scheme differs from upstream's reboot-based switching; first-time upgraders may need to pair again. The one-time identity import applies to the intermediate multi-host firmware, not arbitrary older bond formats.
 
-Edit `src/Config.h`:
+Later web updates accept the application's `firmware.bin`, **not** the combined factory image. The updater checks chip/project identity and the complete image before selecting the inactive slot. Input pauses during installation. Invalid or interrupted uploads leave the running slot selected. Starting an upload replaces the previous backup. A trial boot has a startup health check and rollback support; that check does not prove physical keyboard/mouse functionality. Wi-Fi is off again after restart, so use the CLI to enable it before reopening the update page.
 
-```cpp
-#define DEVICE_NAME_1 "USB-BLE Dev 1"
-#define DEVICE_MANUFACTURER "Custom"
+## Tests
+
+```sh
+sh scripts/test-host.sh
+python3 tests/partition-layout.py  # after pio run
+npm ci --prefix tests
+npx --prefix tests playwright install chromium
+npm test --prefix tests
+sh cli/build.sh
+sh cli/test.sh
 ```
 
-### Board Selection
+Host tests cover shortcut validation, connected-slot cycling, name validation, HID parsing, routing and releases, slot ordering, report timing, controller accounting, and bounded recovery. The USB endpoint regression exercises the vendored driver lookup with colliding endpoint addresses. Browser tests use mocked API responses and cover form validation, safe rendering, and a 375px layout. They do not replace physical-device tests.
 
-The project is configured for `esp32-s3-devkitc-1`. For other boards, edit `platformio.ini`:
+Validated hardware includes a Moonlander keyboard and Logitech MX Master 3S receiver through a USB hub, with two Macs connected simultaneously. Support for three links exists in firmware; other host operating systems and three-host physical behavior need broader testing. The USB driver retains its upstream license and documents the local fix in [LOCAL-CHANGES.md](lib/ESP32_USB_Host_HID/LOCAL-CHANGES.md).
 
-```ini
-board = esp32-s3-devkitc-1  ; Change to your board
-```
+## Scope and diagnostics
 
-Your board needs to have USB-OTG.
+Supports one hub level, boot-format keyboards, and relative HID mice with up to eight buttons, 8/16-bit X/Y, wheel, and horizontal pan. ESP32-S3 USB host channel limits can leave unused composite/vendor interfaces unavailable. NKRO, media-key forwarding, absolute pointers, vendor mouse configuration, and Logitech application passthrough are not implemented.
 
-## Hardware Limitations and Known Issues
+Mouse motion is coalesced to the negotiated BLE interval while preserving button transitions. With the tested Macs this is 15 ms, approximately 66.7 submissions/s. Increasing production above the Bluetooth link's capacity can increase buffering. This is not the mouse's sensor polling rate.
 
-### USB Host Channel Limits
-The ESP32-S3 has a hardware limitation on the number of USB Host channels (pipes).
+The UI separates USB arrivals, BLE submissions, queue wait, and the age of coalesced movement. Fixed-size counters report mean/max, variation, and histogram p95 bounds. Spacing excludes gaps over 100 ms and reports how many were excluded. Wait statistics include long gaps. All aggregate since restart and across decoded mouse sources.
 
-**Consequence:** If you connect a complex hub with multiple devices (e.g., a "Gaming" keyboard that shows up as 3-4 different HID interfaces + a mouse + a hub), you may run out of hardware channels.
-- **Symptoms:** You will see `No more HCD channels available` in the Serial logs, and some devices or interfaces will fail to initialize.
-- **Recommendation:** Use a simple USB hub and avoid devices that present too many virtual interfaces if you plan to use them simultaneously.
+Controller completion instrumentation measures return of HCI packet credits, which includes controller reporting delay; it is not exact radio delivery or mouse-to-screen latency. Wi-Fi and Bluetooth share radio resources, so Wi-Fi is optional and disabled during normal use. See [TODO.md](TODO.md) for remaining features.
