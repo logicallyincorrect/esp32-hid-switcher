@@ -13,3 +13,22 @@ inline int deviceSwitchSlot(const uint8_t *keys, uint8_t modifiers) {
   }
   return slot;
 }
+
+// Tab is consumed even when there is no other connected computer.
+inline bool deviceCycleShortcut(const uint8_t *keys, uint8_t modifiers) {
+  if (!(modifiers & 0x11) || !(modifiers & 0x88) || (modifiers & ~0x99)) return false;
+  bool tab = false;
+  for (int i = 0; i < 6; ++i) {
+    if (!keys[i]) continue;
+    if (keys[i] != 0x2b || tab) return false;
+    tab = true;
+  }
+  return tab;
+}
+inline unsigned nextConnectedSlot(unsigned current, uint8_t connectedMask) {
+  for (unsigned step = 1; step < 3; ++step) {
+    const unsigned candidate = (current + step) % 3;
+    if (connectedMask & (1u << candidate)) return candidate;
+  }
+  return current;
+}

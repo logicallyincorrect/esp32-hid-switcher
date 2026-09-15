@@ -135,6 +135,15 @@ void Bridge::onKeyboardReport(const uint8_t *data, size_t length) {
 
 bool Bridge::checkDeviceSwitchCombo(const uint8_t *keys, uint8_t modifiers) {
   if (!ENABLE_DEVICE_SWITCHING) return false;
+  if (deviceCycleShortcut(keys, modifiers)) {
+    uint8_t connectedMask = 0;
+    for (unsigned i = 0; i < NUM_DEVICE_SLOTS; ++i)
+      if (_bleManager.connected(i)) connectedMask |= 1u << i;
+    const unsigned next = nextConnectedSlot(_bleManager.selected(), connectedMask);
+    Serial.printf("[Shortcut] Control+Command+Tab -> slot %u\n", next + 1);
+    switchToSlot(next);
+    return true;
+  }
   const int slot = deviceSwitchSlot(keys, modifiers);
   if (slot < 0) return false;
   switchToSlot(slot);
