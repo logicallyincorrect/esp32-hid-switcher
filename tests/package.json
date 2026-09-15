@@ -1,0 +1,1 @@
+{"name":"hid-switcher-tests","private":true,"scripts":{"test":"cd .. && node tests/setup-page.cjs"},"devDependencies":{"@playwright/test":"1.58.2"}}

@@ -2,6 +2,7 @@
 #include "DeviceShortcut.h"
 #include <hid_usage_keyboard.h>
 #include <esp32-hal-rgb-led.h>
+#include "SetupServer.h"
 #include <esp_log.h>
 #include "RuntimeHealth.h"
 
@@ -43,7 +44,13 @@ void Bridge::loop() {
   if(previousLoop && loopStart-previousLoop>maxLoopGap)maxLoopGap=loopStart-previousLoop;
   previousLoop=loopStart;
 
+  static SetupServer setup(_bleManager);
+  static bool setupStarted=false;
+  if(!setupStarted){setup.begin();setupStarted=true;}
   _bleManager.loop();
+  const uint32_t setupStart=micros();
+  setup.loop();
+  const uint32_t setupTime=micros()-setupStart;if(setupTime>maxSetup)maxSetup=setupTime;
   static uint32_t inputEpoch=0;
   if(inputEpoch!=_bleManager.inputEpoch()){
     inputEpoch=_bleManager.inputEpoch();xQueueReset(reports);
@@ -69,7 +76,9 @@ void Bridge::loop() {
     if (command >= '1' && command <= '3') {
       shortcutHeld = keyboardHeld;
       switchToSlot(command - '1');
-    } else if(command=='u')USBManager::requestRecovery();
+    } else if(command=='w')setup.toggle();
+    else if(command=='v')setup.radioComparison();
+    else if(command=='u')USBManager::requestRecovery();
     else if (command == '?') {
       _bleManager.printStatus();
       USBManager::printDiagnostics();
