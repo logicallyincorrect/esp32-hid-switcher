@@ -91,14 +91,17 @@ if args.first == "--device" {
     targetID = id; args.removeFirst(2)
 }
 let command = args.first ?? "status"
-func usage() -> Never { fputs("Usage: hid-switcher [--device UUID] status | diagnostics | select SLOT | name SLOT NAME | move SLOT TO | wifi on|off | probe | --help | --version\n", stderr); exit(2) }
+func usage() -> Never { fputs("Usage: hid-switcher [--device UUID] status | diagnostics | select SLOT | name SLOT NAME | ble-name NAME | move SLOT TO | wifi on|off | probe | --help | --version\n", stderr); exit(2) }
 func slot(_ index: Int) -> Int { guard args.count > index, let n = Int(args[index]), (1...3).contains(n) else { usage() }; return n }
 switch command {
 case "--help", "-h":
-    print("Usage: hid-switcher [--device UUID] status | diagnostics | select SLOT | name SLOT NAME | move SLOT TO | wifi on|off | probe")
+    print("Usage: hid-switcher [--device UUID] status | diagnostics | select SLOT | name SLOT NAME | ble-name NAME | move SLOT TO | wifi on|off | probe")
     exit(0)
 case "--version":
     print("hid-switcher " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")); exit(0)
+case "ble-name":
+    guard args.count == 2, !args[1].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, args[1].utf8.count <= 29, !args[1].unicodeScalars.contains(where: {$0.value < 32 || (127...159).contains($0.value)}) else { usage() }
+    request = ["op": command, "name": args[1]]
 case "status", "probe": guard args.count <= 1 else { usage() }
 case "diagnostics": guard args.count == 1 else { usage() }; request = ["op": command]
 case "select": guard args.count == 2 else { usage() }; request = ["op": command, "slot": slot(1)]

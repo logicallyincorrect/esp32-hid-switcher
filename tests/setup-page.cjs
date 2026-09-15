@@ -4,7 +4,7 @@ const assert = require('assert');
 (async()=>{
  const browser=await chromium.launch({headless:true});
  const page=await browser.newPage({viewport:{width:900,height:850}});
- let state={selected:0,generation:1,slots:[{name:'Main Mac',assigned:true,connected:true},{name:'MacBook',assigned:true,connected:true},{name:'Computer 3',assigned:false,connected:false}]};
+ let state={device_name:"HID SWITCHER BLE",selected:0,generation:1,slots:[{name:'Main Mac',assigned:true,connected:true},{name:'MacBook',assigned:true,connected:true},{name:'Computer 3',assigned:false,connected:false}]};
  state.usb={healthy:true,interfaces:[{address:2,vid:0x3297,pid:0x1969,kind:'Keyboard',active:true},{address:3,vid:0x046d,pid:0xc548,kind:'Mouse',active:true}],recoveries:1,transfer_errors:1,open_errors:2};
  state.bluetooth={traffic:{window_ms:5000,mouse_in:625,mouse_tx:625,mouse_cap_hz:125},links:[{slot:0,encrypted:true,keyboard:true,mouse:true,interval_ms:15}],recoveries:0,send_errors:0};
  state.bluetooth.mouse_timing={arrival_spacing:{samples:100,mean_ms:8,max_ms:12,stddev_ms:1,p95_upper_ms:12},oldest_to_submission:{samples:50,mean_ms:9,max_ms:18,stddev_ms:3,p95_upper_ms:24}};
@@ -19,7 +19,7 @@ const assert = require('assert');
    if(path==='/api/firmware'){uploads++;state.firmware.restarting=true;return route.fulfill({status:202,contentType:'application/json',body:'{"restarting":true}'});}
    if(path==='/api/firmware/rollback'){rollbacks++;state.firmware.restarting=true;return route.fulfill({status:202,contentType:'application/json',body:'{"restarting":true}'});}
    const body=req.postDataJSON();
-   if(path==='/api/config'){
+   if(path==='/api/device'){state.device_name=body.name;}else if(path==='/api/config'){
     assert.equal(body.generation,state.generation);assert.equal(new Set(body.order).size,3);
     const previous=state.slots;state.slots=body.order.map((o,i)=>({...previous[o],name:body.names[i]}));state.selected=body.order.indexOf(state.selected);state.generation++;saved++;
    }else if(path==='/api/select'){state.selected=body.slot;state.generation++;selected++;}else if(path==='/api/wifi'){assert.equal(body.ssid,'Home WiFi');assert.equal(body.password,'testpass123');wifi++;state.network={connected:true,connecting:false,ssid:body.ssid,ip:'192.168.1.50',portal:true,error:''};}
@@ -28,6 +28,15 @@ const assert = require('assert');
  });
  await page.goto('http://setup.test/');await page.getByText('Ready',{exact:true}).waitFor();
  assert.equal(await page.locator('.card').count(),3);
+ assert.equal(await page.locator('#device-name').inputValue(),'HID SWITCHER BLE');
+ await page.locator('#device-name').fill('Desk <script>');
+ await page.locator('#device-save').click();
+ await page.getByText('Bluetooth name saved. Computers may cache the old name.',{exact:true}).waitFor();
+ assert.equal(state.device_name,'Desk <script>');
+ assert.equal(await page.locator('#pairing-name').textContent(),'Desk <script>');
+ await page.locator('#device-name').fill('🎹'.repeat(8));
+ await page.locator('#device-save').click();await page.locator('#device-message.error').waitFor();
+ assert.equal(state.device_name,'Desk <script>');
  await page.locator('#name0').fill('Desk <script>');
  await page.locator('.card').nth(0).locator('select').selectOption('2');
  await page.getByRole('button',{name:'Save changes'}).click();await page.getByText('Changes saved',{exact:true}).waitFor();

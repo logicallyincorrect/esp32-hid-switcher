@@ -24,7 +24,7 @@ static bool saveNetwork(const String &ssid,const String &password){
 void SetupServer::error(int status,const char *message){JsonDocument doc;doc["error"]=message;String body;serializeJson(doc,body);_server.send(status,"application/json",body);}
 bool SetupServer::authorize(){if(!_active||_server.header("X-Setup-Token")!=_token){error(403,"Reopen the setup page and try again.");return false;}return true;}
 void SetupServer::state(){
-  JsonDocument doc;doc["selected"]=_ble.selected();doc["generation"]=_ble.config().generation;
+  JsonDocument doc;doc["device_name"]=_ble.deviceName();doc["selected"]=_ble.selected();doc["generation"]=_ble.config().generation;
   auto network=doc["network"].to<JsonObject>();network["connected"]=_online;network["connecting"]=_joining||_pending;network["ssid"]=_online?WiFi.SSID():(_pending?_pendingSsid:_ssid);network["ip"]=_online?WiFi.localIP().toString():String("");network["url"]="http://moonlander.local";network["portal"]=_ap;network["error"]=_networkError;
   USBManager::appendStatus(doc["usb"].to<JsonObject>());
   _ble.appendStatus(doc["bluetooth"].to<JsonObject>());
@@ -44,6 +44,16 @@ void SetupServer::begin(){
     JsonDocument doc;if(_server.arg("plain").length()>128||deserializeJson(doc,_server.arg("plain"))||!doc["slot"].is<unsigned>()||doc["slot"].as<unsigned>()>2){error(400,"Choose a slot from 1 to 3.");return;}
     unsigned selected=doc["slot"];_ble.releaseAll();_ble.selectSlot(selected);
     if(_ble.selected()!=selected){error(500,"Could not save selection.");return;}state();
+  });
+  _server.on("/api/device",HTTP_POST,[this](){
+    if(!authorize())return;
+    if(_firmware.busy()||_firmware.rebootPending()){error(409,"Wait for the firmware update to finish.");return;}
+    JsonDocument doc;
+    if(_server.arg("plain").length()>256||deserializeJson(doc,_server.arg("plain"))||!doc["name"].is<const char *>()){error(400,"Provide a Bluetooth name.");return;}
+    const String name=doc["name"].as<String>();
+    if(!validDeviceName(name.c_str(),name.length())){error(400,"Use 1-29 UTF-8 bytes without control characters.");return;}
+    if(!_ble.setDeviceName(name)){error(500,"Could not save the Bluetooth name. Try again.");return;}
+    state();
   });
   _server.on("/api/config",HTTP_POST,[this](){
     if(!authorize())return;

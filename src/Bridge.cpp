@@ -32,7 +32,7 @@ void Bridge::begin() {
   USBManager::setKeyboardCallback(onKeyboardReport);
   USBManager::setMouseCallback(onMouseReport);
   USBManager::begin();
-  Serial.printf("[Setup] Pair %s on computer 1, select slot 2 and pair computer 2, then slot 3.\n",DEVICE_NAME);
+  Serial.printf("[Setup] Pair %s on computer 1, select slot 2 and pair computer 2, then slot 3.\n",_bleManager.deviceName().c_str());
   Serial.println("[Setup] Control+Command+1/2/3 selects a slot. UART digits 1/2/3 also select; ? shows status.");
 }
 

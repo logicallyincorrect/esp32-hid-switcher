@@ -1,8 +1,8 @@
 #pragma once
 #include <Arduino.h>
 
-#define DEVICE_NAME "Moonlander BLE"
-#define DEVICE_MANUFACTURER "Moonlander USB Bridge"
+#define DEVICE_NAME "HID SWITCHER BLE"
+#define DEVICE_MANUFACTURER "ESP32 USB HID Bridge"
 #define NUM_DEVICE_SLOTS 3
 
 // Control + Command + normal number-row 1/2/3 (either left/right modifiers).

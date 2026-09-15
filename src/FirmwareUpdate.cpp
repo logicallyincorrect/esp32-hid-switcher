@@ -56,7 +56,7 @@ bool FirmwareUpdate::write(const uint8_t *data,size_t length){
     memcpy(&app,_prefix+sizeof(header)+sizeof(esp_image_segment_header_t),sizeof(app));
     if(header.magic!=ESP_IMAGE_HEADER_MAGIC||header.chip_id!=ESP_CHIP_ID_ESP32S3||app.magic_word!=ESP_APP_DESC_MAGIC_WORD||
        memcmp(app.project_name,esp_app_get_description()->project_name,sizeof(app.project_name))!=0){
-      abort("Choose a Moonlander ESP32-S3 firmware.bin, not a factory image");return false;
+      abort("Choose a HID Switcher ESP32-S3 firmware.bin, not a factory image");return false;
     }
     if(esp_ota_begin(_target,OTA_WITH_SEQUENTIAL_WRITES,&_handle)!=ESP_OK){abort("Could not open inactive firmware slot");return false;}
     _writing=true;_rollbackAvailable=false;

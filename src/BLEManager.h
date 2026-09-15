@@ -11,6 +11,7 @@
 #include "MouseCadence.h"
 #include <ArduinoJson.h>
 #include "SlotConfig.h"
+#include "DeviceName.h"
 #include "ReconnectGuard.h"
 
 class BLEManager : public NimBLEServerCallbacks, public NimBLECharacteristicCallbacks {
@@ -22,6 +23,8 @@ public:
   void setWiFiControl(bool (*fn)(void *,bool),void *context){_wifiControl=fn;_wifiContext=context;}
   void setWiFiState(bool enabled,bool connected){_wifiEnabled=enabled;_wifiConnected=connected;}
 
+  const String &deviceName() const { return _deviceName; }
+  bool setDeviceName(const String &name);
   void selectSlot(uint8_t slot);
   bool isConnected() { return _router.connected(_router.selected()); }
   void printStatus();
@@ -78,6 +81,7 @@ private:
   bool _assigned[3] = {};
   Preferences _prefs;
   SlotConfig _config;
+  String _deviceName;
   bool saveConfig(const SlotConfig &config);
   void applyIdentities();
   QueueHandle_t _events = nullptr;

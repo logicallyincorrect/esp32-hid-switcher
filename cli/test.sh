@@ -15,5 +15,9 @@ invalid move 1 4
 invalid name 1 ""
 invalid wifi bad
 invalid status extra
+invalid ble-name ""
+invalid ble-name "   "
+invalid ble-name 123456789012345678901234567890
 invalid --device invalid status
+invalid ble-name "$(printf 'Desk\nName')"
 echo "CLI argument checks passed (no Bluetooth access required)"

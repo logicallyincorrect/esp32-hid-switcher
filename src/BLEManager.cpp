@@ -52,7 +52,9 @@ void BLEManager::begin(uint8_t slot) {
   _intervalTuningDisabled=_prefs.getBool("interval-probe",false);
   applyIdentities();
   _router.select(_config.selected);
-  NimBLEDevice::init(DEVICE_NAME);
+  _deviceName=_prefs.getString("ble-name",DEVICE_NAME);
+  if(!validDeviceName(_deviceName.c_str(),_deviceName.length()))_deviceName=DEVICE_NAME;
+  NimBLEDevice::init(_deviceName.c_str());
   Serial.printf("[BLE diagnostic] restored bonds=%u\n",NimBLEDevice::getNumBonds());
   // The bridge has no display or passkey entry UI. Use encrypted bonded pairing.
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
@@ -96,9 +98,9 @@ void BLEManager::begin(uint8_t slot) {
   adv->addServiceUUID(_hid->getHidService()->getUUID());
   adv->addServiceUUID(configService->getUUID());
   adv->enableScanResponse(true);
-  adv->setName(DEVICE_NAME);
+  adv->setName(_deviceName.c_str());
   adv->start();
-  Serial.printf("[BLE] %s: up to 3 simultaneous connections; no reboot switching\n",DEVICE_NAME);
+  Serial.printf("[BLE] %s: up to 3 simultaneous connections; no reboot switching\n",_deviceName.c_str());
   printStatus();
 }
 
@@ -213,6 +215,9 @@ void BLEManager::processConfigCommand(){
     if(valid){uint8_t order[]={0,1,2};char names[3][33];for(int i=0;i<3;++i)memcpy(names[i],_config.slots[i].name,33);memset(names[slot-1],0,33);memcpy(names[slot-1],name,len);ok=configure(order,names,_config.generation);}
   }else if(!strcmp(op,"move")&&slot>=1&&slot<=3&&command["to"].is<int>()){
     const int to=command["to"];if(to>=1&&to<=3){uint8_t order[]={0,1,2};const auto item=order[slot-1];if(slot<to)for(int i=slot-1;i<to-1;++i)order[i]=order[i+1];else for(int i=slot-1;i>to-1;--i)order[i]=order[i-1];order[to-1]=item;char names[3][33];for(int i=0;i<3;++i)memcpy(names[i],_config.slots[order[i]].name,33);ok=configure(order,names,_config.generation);}
+  }else if(!strcmp(op,"ble-name")&&command["name"].is<const char *>()){
+    const String name=command["name"].as<String>();
+    ok=setDeviceName(name);if(!ok)error="Name must be 1-29 UTF-8 bytes; settings must be writable and input not in maintenance";
   }else if(!strcmp(op,"wifi")&&command["enabled"].is<bool>()){
     ok=_wifiControl&&_wifiControl(_wifiContext,command["enabled"].as<bool>());if(!ok)error="Wi-Fi control unavailable or firmware update active";
   }else if(!strcmp(op,"diagnostics")){
@@ -223,7 +228,7 @@ void BLEManager::processConfigCommand(){
   String value;serializeJson(response,value);_configReply->setValue(value.c_str());updateConfigStatus();
 }
 void BLEManager::updateConfigStatus(){
-  JsonDocument doc;doc["protocol"]=1;doc["device"]="Moonlander";doc["selected"]=selected()+1;doc["wifi_enabled"]=_wifiEnabled;doc["wifi_connected"]=_wifiConnected;
+  JsonDocument doc;doc["protocol"]=1;doc["device"]=_deviceName;doc["selected"]=selected()+1;doc["wifi_enabled"]=_wifiEnabled;doc["wifi_connected"]=_wifiConnected;
   auto slots=doc["slots"].to<JsonArray>();for(unsigned i=0;i<3;++i){auto slot=slots.add<JsonObject>();slot["slot"]=i+1;slot["name"]=_config.slots[i].name;slot["assigned"]=bool(_assigned[i]);slot["connected"]=connected(i);}
   String value;serializeJson(doc,value);_configStatus->setValue(value.c_str());
 }
@@ -447,6 +452,20 @@ void BLEManager::sendMouseReport(const MouseReport &r,uint32_t received) {
     Serial.println("[Mouse] Button transition queue overflow; released input");
   }
 }
+bool BLEManager::setDeviceName(const String &name) {
+  if(_maintenance || !validDeviceName(name.c_str(),name.length()))return false;
+  if(name==_deviceName)return true;
+  auto adv=NimBLEDevice::getAdvertising();
+  // Refresh only the scan response; leave active HID links and service UUIDs intact.
+  auto apply=[adv](const String &value){
+    NimBLEAdvertisementData scan;
+    return scan.setName(value.c_str()) && NimBLEDevice::setDeviceName(value.c_str()) && adv->setScanResponseData(scan);
+  };
+  if(!apply(name)){apply(_deviceName);return false;}
+  if(_prefs.putString("ble-name",name)!=name.length()){apply(_deviceName);return false;}
+  _deviceName=name;updateConfigStatus();return true;
+}
+
 bool BLEManager::saveConfig(const SlotConfig &config) { return _prefs.putBytes("config",&config,sizeof(config))==sizeof(config); }
 void BLEManager::applyIdentities() {
   for(unsigned i=0;i<3;++i){_assigned[i]=_config.slots[i].assigned;_identities[i].type=_config.slots[i].type;memcpy(_identities[i].val,_config.slots[i].address,6);}
