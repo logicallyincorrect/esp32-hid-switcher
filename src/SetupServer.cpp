@@ -45,6 +45,17 @@ void SetupServer::begin(){
     unsigned selected=doc["slot"];_ble.releaseAll();_ble.selectSlot(selected);
     if(_ble.selected()!=selected){error(500,"Could not save selection.");return;}state();
   });
+  _server.on("/api/shortcuts",HTTP_GET,[this](){
+    JsonDocument doc;_ble.appendShortcuts(doc.to<JsonObject>());String body;serializeJson(doc,body);_server.send(200,"application/json",body);
+  });
+  _server.on("/api/shortcuts",HTTP_POST,[this](){
+    if(!authorize())return;
+    if(_firmware.busy()||_firmware.rebootPending()){error(409,"Wait for the firmware update to finish.");return;}
+    JsonDocument command,result;String message;
+    if(_server.arg("plain").length()>256||deserializeJson(command,_server.arg("plain"))){error(400,"Invalid shortcut request.");return;}
+    if(!_ble.shortcutCommand(command.as<JsonVariantConst>(),result.to<JsonObject>(),message)){error(400,message.c_str());return;}
+    String body;serializeJson(result,body);_server.send(200,"application/json",body);
+  });
   _server.on("/api/device",HTTP_POST,[this](){
     if(!authorize())return;
     if(_firmware.busy()||_firmware.rebootPending()){error(409,"Wait for the firmware update to finish.");return;}

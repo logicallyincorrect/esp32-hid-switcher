@@ -15,6 +15,7 @@ static bool reportOverflow = false;
 static bool shortcutHeld = false;
 static bool keyboardHeld = false, mouseBlocked = false;
 static uint8_t mouseButtonsHeld = 0;
+static uint8_t keyboardModifiers=0,keyboardKeys[6]={};
 struct Report { bool mouse=false; uint8_t bytes[8]={}; MouseReport movement; uint32_t received=0; };
 
 void Bridge::begin() {
@@ -33,7 +34,7 @@ void Bridge::begin() {
   USBManager::setMouseCallback(onMouseReport);
   USBManager::begin();
   Serial.printf("[Setup] Pair %s on computer 1, select slot 2 and pair computer 2, then slot 3.\n",_bleManager.deviceName().c_str());
-  Serial.println("[Setup] Control+Command+1/2/3 selects a slot. UART digits 1/2/3 also select; ? shows status.");
+  Serial.println("[Setup] Use configured switch shortcuts. Defaults: Ctrl+Cmd+1/2/3 or Tab. UART digits select; ? shows status.");
 }
 
 void Bridge::loop() {
@@ -95,21 +96,26 @@ void Bridge::loop() {
   while (xQueueReceive(reports, &report, 0) == pdTRUE) {
     if(report.mouse) {
       mouseButtonsHeld=report.movement.buttons;
+      if(_bleManager.captureMouse(mouseButtonsHeld)){
+        shortcutHeld=keyboardHeld;mouseBlocked=mouseButtonsHeld!=0;continue;
+      }
+      if(!mouseBlocked&&checkDeviceSwitchCombo(keyboardKeys,keyboardModifiers,true)){
+        _bleManager.releaseAll();shortcutHeld=keyboardHeld;mouseBlocked=mouseButtonsHeld!=0;continue;
+      }
       if(mouseBlocked){if(report.movement.buttons==0)mouseBlocked=false;else report.movement.buttons=0;}
       _bleManager.sendMouseReport(report.movement,report.received);continue;
     }
     bool released = report.bytes[0] == 0;
     for (int i = 2; i < 8; ++i) released &= report.bytes[i] == 0;
     keyboardHeld=!released;
+    keyboardModifiers=report.bytes[0];memcpy(keyboardKeys,report.bytes+2,6);
+    if(_bleManager.captureKeyboard(keyboardKeys,keyboardModifiers)){
+      shortcutHeld=keyboardHeld;mouseBlocked=mouseButtonsHeld!=0;continue;
+    }
     if (shortcutHeld) {
       if (released) shortcutHeld = false;
       continue;
     }
-    // Log only candidate Control+Command number shortcuts, never ordinary typing.
-    for (int i = 2; i < 8; ++i)
-      if ((report.bytes[0] & 0x11) && (report.bytes[0] & 0x88) &&
-          report.bytes[i] >= 0x1e && report.bytes[i] <= 0x20)
-        Serial.printf("[Shortcut] Control+Command+%u modifiers=0x%02x\n", report.bytes[i] - 0x1d, report.bytes[0]);
     if (checkDeviceSwitchCombo(report.bytes + 2, report.bytes[0])) {
       shortcutHeld = true;
       _bleManager.releaseAll();
@@ -142,19 +148,14 @@ void Bridge::onKeyboardReport(const uint8_t *data, size_t length) {
   }
 }
 
-bool Bridge::checkDeviceSwitchCombo(const uint8_t *keys, uint8_t modifiers) {
+bool Bridge::checkDeviceSwitchCombo(const uint8_t *keys, uint8_t modifiers, bool mouseEvent) {
   if (!ENABLE_DEVICE_SWITCHING) return false;
-  if (deviceCycleShortcut(keys, modifiers)) {
-    uint8_t connectedMask = 0;
-    for (unsigned i = 0; i < NUM_DEVICE_SLOTS; ++i)
-      if (_bleManager.connected(i)) connectedMask |= 1u << i;
-    const unsigned next = nextConnectedSlot(_bleManager.selected(), connectedMask);
-    Serial.printf("[Shortcut] Control+Command+Tab -> slot %u\n", next + 1);
-    switchToSlot(next);
-    return true;
-  }
-  const int slot = deviceSwitchSlot(keys, modifiers);
-  if (slot < 0) return false;
+  const int action=_bleManager.shortcutAction(keys,modifiers,mouseBlocked?0:mouseButtonsHeld,mouseEvent?2:0);
+  if(action<0)return false;
+  uint8_t connectedMask=0;
+  for(unsigned i=0;i<NUM_DEVICE_SLOTS;++i)if(_bleManager.connected(i))connectedMask|=1u<<i;
+  const unsigned slot=shortcutDestination(action,_bleManager.selected(),connectedMask);
+  Serial.printf("[Shortcut] Action %d -> slot %u\n",action,slot+1);
   switchToSlot(slot);
   return true;
 }

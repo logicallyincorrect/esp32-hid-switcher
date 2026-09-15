@@ -12,6 +12,7 @@
 #include <ArduinoJson.h>
 #include "SlotConfig.h"
 #include "DeviceName.h"
+#include "ShortcutBindings.h"
 #include "ReconnectGuard.h"
 
 class BLEManager : public NimBLEServerCallbacks, public NimBLECharacteristicCallbacks {
@@ -25,6 +26,11 @@ public:
 
   const String &deviceName() const { return _deviceName; }
   bool setDeviceName(const String &name);
+  bool shortcutCommand(JsonVariantConst command,JsonObject result,String &error);
+  void appendShortcuts(JsonObject result) const;
+  bool captureKeyboard(const uint8_t *keys,uint8_t modifiers){return _shortcutRecorder.keyboard(keys,modifiers);}
+  bool captureMouse(uint8_t buttons){return _shortcutRecorder.mouse(buttons);}
+  int shortcutAction(const uint8_t *keys,uint8_t modifiers,uint8_t buttons,uint8_t kind=0)const{return matchingShortcut(_shortcuts,keys,modifiers,buttons,kind);}
   void selectSlot(uint8_t slot);
   bool isConnected() { return _router.connected(_router.selected()); }
   void printStatus();
@@ -82,6 +88,9 @@ private:
   Preferences _prefs;
   SlotConfig _config;
   String _deviceName;
+  ShortcutConfig _shortcuts;
+  ShortcutRecorder _shortcutRecorder;
+  String _shortcutToken;
   bool saveConfig(const SlotConfig &config);
   void applyIdentities();
   QueueHandle_t _events = nullptr;

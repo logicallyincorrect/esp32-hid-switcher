@@ -9,16 +9,30 @@ const assert = require('assert');
  state.bluetooth={traffic:{window_ms:5000,mouse_in:625,mouse_tx:625,mouse_cap_hz:125},links:[{slot:0,encrypted:true,keyboard:true,mouse:true,interval_ms:15}],recoveries:0,send_errors:0};
  state.bluetooth.mouse_timing={arrival_spacing:{samples:100,mean_ms:8,max_ms:12,stddev_ms:1,p95_upper_ms:12},oldest_to_submission:{samples:50,mean_ms:9,max_ms:18,stddev_ms:3,p95_upper_ms:24}};
  state.firmware={build:'12345678',slot:'app0',trial:false,rollback_available:true,uptime_seconds:120,max_bytes:3145728};
+ let shortcutConfig={generation:0,bindings:[[0,1,9,[43],0],[0,2,0,[],0],[1,1,0,[],0],[1,2,0,[],0],[2,1,0,[],0],[2,2,0,[],0],[3,1,9,[],0]]};
+ let recordingAction=0,shortcutSaves=0,shortcutCancels=0;
  let uploads=0,rollbacks=0;
  let saved=0,selected=0,wifi=0;const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('http://setup.test/**',async route=>{
   const req=route.request(),path=new URL(req.url()).pathname;
   if(path==='/')return route.fulfill({contentType:'text/html',body:fs.readFileSync('web/index.html','utf8').replace('__SETUP_TOKEN__','test-token')});
+  if(path==='/api/shortcuts'&&req.method()==='GET')return route.fulfill({contentType:'application/json',body:JSON.stringify(shortcutConfig)});
   if(req.method()==='POST'){
    assert.equal(req.headers()['x-setup-token'],'test-token');
    if(path==='/api/firmware'){uploads++;state.firmware.restarting=true;return route.fulfill({status:202,contentType:'application/json',body:'{"restarting":true}'});}
    if(path==='/api/firmware/rollback'){rollbacks++;state.firmware.restarting=true;return route.fulfill({status:202,contentType:'application/json',body:'{"restarting":true}'});}
    const body=req.postDataJSON();
+   if(path==='/api/shortcuts'){
+    let response;
+    if(body.op==='shortcut-record'){recordingAction=body.action;response={token:'test-capture-token',state:'waiting'};}
+    else if(body.op==='shortcut-status'){assert.equal(body.token,'test-capture-token');response={state:'ready',label:'Ctrl + Cmd + Button 4'};}
+    else if(body.op==='shortcut-save'){assert.equal(body.token,'test-capture-token');shortcutSaves++;shortcutConfig.bindings[2*recordingAction+1]=[recordingAction,2,9,[],8];response=shortcutConfig;}
+    else if(body.op==='shortcut-clear'){shortcutConfig.bindings[2*body.action+(body.kind===2)]=[body.action,body.kind,0,[],0];response=shortcutConfig;}
+    else if(body.op==='shortcut-cancel'){shortcutCancels++;response={state:'cancelled'};}
+    else if(body.op==='shortcuts-reset'){shortcutConfig.bindings[0]=[0,1,9,[43],0];shortcutConfig.bindings[1]=[0,2,0,[],0];response=shortcutConfig;}
+    else throw Error('Unknown shortcut operation');
+    return route.fulfill({contentType:'application/json',body:JSON.stringify(response)});
+   }
    if(path==='/api/device'){state.device_name=body.name;}else if(path==='/api/config'){
     assert.equal(body.generation,state.generation);assert.equal(new Set(body.order).size,3);
     const previous=state.slots;state.slots=body.order.map((o,i)=>({...previous[o],name:body.names[i]}));state.selected=body.order.indexOf(state.selected);state.generation++;saved++;
@@ -28,6 +42,20 @@ const assert = require('assert');
  });
  await page.goto('http://setup.test/');await page.getByText('Ready',{exact:true}).waitFor();
  assert.equal(await page.locator('.card').count(),3);
+ assert.equal(await page.locator('#shortcut-list .shortcut').count(),4);
+ assert(!(await page.locator('#shortcut-list .shortcut').nth(3).textContent()).includes('Mouse:'));
+ assert((await page.locator('#shortcut-list .shortcut').nth(3).textContent()).includes('1/2/3'));
+ await page.getByRole('button',{name:'Record cycle',exact:true}).click();
+ await page.getByText('Captured: Ctrl + Cmd + Button 4. Save to use this shortcut.',{exact:true}).waitFor();
+ assert.equal(shortcutSaves,0);
+ await page.locator('#shortcut-save').click();await page.getByText('Shortcut saved.',{exact:true}).waitFor();
+ assert.equal(shortcutSaves,1);assert.deepEqual(shortcutConfig.bindings[0],[0,1,9,[43],0]);assert((await page.locator('#shortcut-list').textContent()).includes('Ctrl + Cmd + Button 4'));
+ await page.getByRole('button',{name:'Record next',exact:true}).click();
+ await page.locator('#shortcut-cancel').click();await page.getByText('Recording cancelled; shortcut unchanged.',{exact:true}).waitFor();
+ assert.equal(shortcutCancels,1);assert.equal(shortcutSaves,1);
+ await page.getByRole('button',{name:'Clear keyboard for cycle',exact:true}).click();await page.getByText('Binding cleared.',{exact:true}).waitFor();
+ assert.deepEqual(shortcutConfig.bindings[0],[0,1,0,[],0]);assert.deepEqual(shortcutConfig.bindings[1],[0,2,9,[],8]);
+ assert.equal(await page.getByRole('button',{name:'Clear mouse for slot',exact:true}).count(),0);
  assert.equal(await page.locator('#device-name').inputValue(),'HID SWITCHER BLE');
  await page.locator('#device-name').fill('Desk <script>');
  await page.locator('#device-save').click();

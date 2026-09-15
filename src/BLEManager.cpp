@@ -50,6 +50,10 @@ void BLEManager::begin(uint8_t slot) {
   // An interrupted timing probe stays disabled across reboot; normal pairing
   // and input still work. Do not repeatedly trigger a controller fault.
   _intervalTuningDisabled=_prefs.getBool("interval-probe",false);
+  if(_prefs.getBytesLength("shortcuts")==sizeof(_shortcuts)){
+    ShortcutConfig saved;
+    if(_prefs.getBytes("shortcuts",&saved,sizeof(saved))==sizeof(saved)&&validShortcuts(saved))_shortcuts=saved;
+  }
   applyIdentities();
   _router.select(_config.selected);
   _deviceName=_prefs.getString("ble-name",DEVICE_NAME);
@@ -208,7 +212,11 @@ void BLEManager::processConfigCommand(){
   if(strlen(id)!=36)return;
   response["id"]=id;bool ok=false;const char *error="Invalid command or arguments";
   const int slot=command["slot"]|0;
-  if(!strcmp(op,"select")&&command["slot"].is<int>()&&slot>=1&&slot<=3){selectSlot(slot-1);ok=selected()==unsigned(slot-1);}
+  String shortcutError;
+  if(!strncmp(op,"shortcut",8)){
+    ok=shortcutCommand(command.as<JsonVariantConst>(),response["result"].to<JsonObject>(),shortcutError);
+    if(!ok)error=shortcutError.c_str();
+  }else if(!strcmp(op,"select")&&command["slot"].is<int>()&&slot>=1&&slot<=3){selectSlot(slot-1);ok=selected()==unsigned(slot-1);}
   else if(!strcmp(op,"name")&&slot>=1&&slot<=3&&command["name"].is<const char *>()){
     const char *name=command["name"];const size_t len=strlen(name);bool valid=len>0&&len<=32;
     for(size_t i=0;i<len;++i)if(uint8_t(name[i])<32||uint8_t(name[i])==127)valid=false;
@@ -233,6 +241,7 @@ void BLEManager::updateConfigStatus(){
   String value;serializeJson(doc,value);_configStatus->setValue(value.c_str());
 }
 void BLEManager::loop() {
+  _shortcutRecorder.tick(millis());
   if(millis()-_lastConfigStatus>=1000){_lastConfigStatus=millis();updateConfigStatus();}
 
   portENTER_CRITICAL(&_eventMux); bool overflow = _eventOverflow; _eventOverflow = false; portEXIT_CRITICAL(&_eventMux);
@@ -452,6 +461,83 @@ void BLEManager::sendMouseReport(const MouseReport &r,uint32_t received) {
     Serial.println("[Mouse] Button transition queue overflow; released input");
   }
 }
+static String shortcutLabel(const ShortcutBinding &b){
+  String label;
+  const char *mods[]={"Ctrl","Shift","Alt","Cmd"};
+  auto append=[&label](const String &part){if(label.length())label+=" + ";label+=part;};
+  for(unsigned i=0;i<4;++i)if(b.modifiers&(1u<<i))append(mods[i]);
+  if(b.kind==2){
+    String mouse=(b.buttons&(b.buttons-1))?"Buttons ":"Button ";bool first=true;
+    for(unsigned i=0;i<8;++i)if(b.buttons&(1u<<i)){if(!first)mouse+="+";mouse+=String(i+1);first=false;}
+    append(mouse);
+  }
+  else for(auto key:b.keys){
+    if(!key)break;
+    if(key>=4&&key<=29)append(String(char('A'+key-4)));
+    else if(key>=0x1e&&key<=0x27)append(String((key-0x1d)%10));
+    else if(key==0x2b)append("Tab");else if(key==0x28)append("Enter");
+    else if(key==0x29)append("Esc");else if(key==0x2c)append("Space");
+    else {char value[5];snprintf(value,sizeof(value),"0x%02X",key);append(value);}
+  }
+  return label;
+}
+void BLEManager::appendShortcuts(JsonObject result)const{
+  result["generation"]=_shortcuts.generation;
+  auto list=result["bindings"].to<JsonArray>();
+  // Compact tuples keep all seven bindings within one 512-byte ATT value.
+  for(unsigned i=0;i<ShortcutBindingCount;++i){const auto &b=_shortcuts.bindings[i];auto item=list.add<JsonArray>();
+    item.add(i/2);item.add(b.kind);item.add(b.modifiers);auto keys=item.add<JsonArray>();
+    for(auto key:b.keys)if(key)keys.add(key);item.add(b.buttons);
+  }
+}
+bool BLEManager::shortcutCommand(JsonVariantConst command,JsonObject result,String &error){
+  const char *op=command["op"]|"";
+  if(!strcmp(op,"shortcuts")){appendShortcuts(result);return true;}
+  if(_maintenance){error="Wait for the firmware update to finish";return false;}
+  if(!strcmp(op,"shortcut-record")){
+    if(!command["action"].is<unsigned>()||command["action"].as<unsigned>()>3){error="Choose Cycle, Next, Previous, or Slot";return false;}
+    if(_shortcutRecorder.active()){error="Another recording is active; cancel it or wait 60 seconds";return false;}
+    char token[33];snprintf(token,sizeof(token),"%08lx%08lx%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random());_shortcutToken=token;
+    releaseAll();
+    _shortcutRecorder.begin(command["action"],millis(),_shortcuts.generation);
+    result["token"]=_shortcutToken;result["state"]="waiting";return true;
+  }
+  if(!strcmp(op,"shortcuts-reset")){
+    if(_shortcutRecorder.active()){error="Cancel the recording before resetting shortcuts";return false;}
+    ShortcutConfig next;next.generation=_shortcuts.generation+1;
+    if(_prefs.putBytes("shortcuts",&next,sizeof(next))!=sizeof(next)){error="Could not save shortcuts";return false;}
+    _shortcuts=next;releaseAll();appendShortcuts(result);return true;
+  }
+  if(!strcmp(op,"shortcut-clear")){
+    if(_shortcutRecorder.active()){error="Cancel the recording before clearing shortcuts";return false;}
+    if(!command["action"].is<unsigned>()||command["action"].as<unsigned>()>3||!command["kind"].is<unsigned>()){error="Choose an action and input type";return false;}
+    const unsigned action=command["action"],kind=command["kind"];
+    if((kind!=1&&kind!=2)||(action==Slot&&kind!=1)){error="Slot supports keyboard only";return false;}
+    ShortcutConfig next=_shortcuts;auto &binding=next.bindings[shortcutBindingIndex(action,kind)];binding={};binding.kind=kind;++next.generation;
+    if(_prefs.putBytes("shortcuts",&next,sizeof(next))!=sizeof(next)){error="Could not clear shortcut";return false;}
+    _shortcuts=next;releaseAll();appendShortcuts(result);return true;
+  }
+  const String token=command["token"]|"";
+  if(!_shortcutToken.length()||token!=_shortcutToken){error="Recording session expired or belongs to another client";return false;}
+  if(!strcmp(op,"shortcut-cancel")){_shortcutRecorder.cancel();result["state"]="cancelled";return true;}
+  if(!strcmp(op,"shortcut-status")){
+    const char *states[]={"idle","waiting","recording","ready","cancelled","expired"};
+    result["state"]=states[_shortcutRecorder.state];result["action"]=_shortcutRecorder.target;
+    if(_shortcutRecorder.state==ShortcutRecorder::Ready)result["label"]=shortcutLabel(_shortcutRecorder.candidate)+(_shortcutRecorder.target==Slot?" + 1/2/3":"");
+    return true;
+  }
+  if(!strcmp(op,"shortcut-save")){
+    if(_shortcutRecorder.state!=ShortcutRecorder::Ready){error="Record and release a shortcut first";return false;}
+    if(_shortcuts.generation!=_shortcutRecorder.generation){error="Shortcuts changed; record again";return false;}
+    ShortcutConfig next=_shortcuts;next.bindings[shortcutBindingIndex(_shortcutRecorder.target,_shortcutRecorder.candidate.kind)]=_shortcutRecorder.candidate;++next.generation;
+    if(!validShortcuts(next)){error="That combination conflicts with another shortcut";return false;}
+    if(_prefs.putBytes("shortcuts",&next,sizeof(next))!=sizeof(next)){error="Could not save shortcut";return false;}
+    _shortcuts=next;_shortcutRecorder.state=ShortcutRecorder::Idle;
+    releaseAll();appendShortcuts(result);return true;
+  }
+  error="Unknown shortcut command";return false;
+}
+
 bool BLEManager::setDeviceName(const String &name) {
   if(_maintenance || !validDeviceName(name.c_str(),name.length()))return false;
   if(name==_deviceName)return true;

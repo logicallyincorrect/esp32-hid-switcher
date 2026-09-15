@@ -42,7 +42,7 @@ private:
 
   /** @brief Checks if the current keyboard input matches the device switch
    * combo. */
-  static bool checkDeviceSwitchCombo(const uint8_t *keys, uint8_t modifiers);
+  static bool checkDeviceSwitchCombo(const uint8_t *keys, uint8_t modifiers, bool mouseEvent=false);
 };
 
 #endif // BRIDGE_H
