@@ -1,0 +1,3 @@
+#include "ControllerTracker.h"
+#include <cassert>
+int main(){ControllerTracker t;t.submit(1,2,100);t.submit(1,1,200);t.submit(2,2,300);t.complete(1,2,10100);assert(t.completed[2].mean()==10000&&t.completed[1].mean()==9900);assert(t.find(1)->batchSizes.mean()==2&&t.windowBatch.max==2&&t.windowMouse.count==1);assert(t.find(2)->count==1);t.disconnect(2);assert(t.discarded==1);t.submit(2,2,0xfffffff0);t.complete(2,1,984);assert(t.completed[2].max==10000&&t.completed[2].count==2);t.complete(1,1,12000);assert(t.unmatched==1&&t.find(1)->desynced);t.disconnect(1);for(int i=0;i<65;++i)t.submit(1,2,i);assert(t.overflow==1&&t.find(1)->desynced);}

@@ -1,5 +1,6 @@
 #include "BLEManager.h"
 #include "Config.h"
+#include "ControllerDiagnostics.h"
 #include <nimble/nimble/host/include/host/ble_gatt.h>
 #include <nimble/nimble/host/include/host/ble_l2cap.h>
 #include <nimble/nimble/host/include/host/ble_hs_mbuf.h>
@@ -72,6 +73,7 @@ void BLEManager::begin(uint8_t slot) {
   _mouse->setCallbacks(this);
   _mouse->setValue(empty,7);
   _server->start();
+  ControllerDiagnostics::reports(_input->getHandle(),_mouse->getHandle());
   // Existing hosts cached the keyboard-only GATT table. Queue the standard
   // Service Changed indication for bonded peers before they reconnect.
   if (!_prefs.getBool("mouse-gatt", false)) {
@@ -360,6 +362,7 @@ void BLEManager::sendKeyboardReport(const uint8_t *keys, uint8_t modifiers) {
   if(!_pendingKeyboard.push(report)){releaseAll();++_inputEpoch;Serial.println("[Input] Keyboard queue overflow; released input");}
 }
 void BLEManager::printStatus() {
+  ControllerDiagnostics::printStatus();
   static uint32_t last=0;
   const uint32_t now=millis();
   _traffic={now-last,_keyboardIn,_mouseIn,_tx[0],_tx[1],_txFailed};
@@ -413,6 +416,7 @@ static void timingJson(JsonObject out,const TimingStats &stats){
   out["stddev_ms"]=stats.deviation()/1000.0;out["p95_upper_ms"]=stats.count?stats.p95Upper()/1000.0:0;
 }
 void BLEManager::appendStatus(JsonObject out){
+  ControllerDiagnostics::appendStatus(out["controller"].to<JsonObject>());
   auto timing=out["mouse_timing"].to<JsonObject>();
   timing["scope"]="since_restart";timing["idle_cutoff_ms"]=100;
   timing["arrival_idle_gaps"]=_mouseArrivalSpacing.idleGaps;timing["submission_idle_gaps"]=_mouseSubmissionSpacing.idleGaps;
