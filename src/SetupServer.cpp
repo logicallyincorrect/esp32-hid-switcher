@@ -28,22 +28,26 @@ void SetupServer::state(){
   auto network=doc["network"].to<JsonObject>();network["connected"]=_online;network["connecting"]=_joining||_pending;network["ssid"]=_online?WiFi.SSID():(_pending?_pendingSsid:_ssid);network["ip"]=_online?WiFi.localIP().toString():String("");network["url"]="http://moonlander.local";network["portal"]=_ap;network["error"]=_networkError;
   USBManager::appendStatus(doc["usb"].to<JsonObject>());
   _ble.appendStatus(doc["bluetooth"].to<JsonObject>());
+  _firmware.status(doc["firmware"].to<JsonObject>());
   auto array=doc["slots"].to<JsonArray>();for(unsigned i=0;i<3;++i){auto slot=array.add<JsonObject>();slot["name"]=_ble.config().slots[i].name;slot["assigned"]=bool(_ble.config().slots[i].assigned);slot["connected"]=_ble.connected(i);}
   String body;serializeJson(doc,body);_server.sendHeader("Cache-Control","no-store");_server.send(200,"application/json",body);
 }
 void SetupServer::begin(){
+  _firmware.begin();
   pinMode(0,INPUT_PULLUP);
   const char *headers[]={"X-Setup-Token"};_server.collectHeaders(headers,1);
   _server.on("/",HTTP_GET,[this](){String page=SETUP_PAGE;page.replace("__SETUP_TOKEN__",_token);_server.sendHeader("Cache-Control","no-store");_server.send(200,"text/html; charset=utf-8",page);});
   _server.on("/api/state",HTTP_GET,[this](){state();});
   _server.on("/api/select",HTTP_POST,[this](){
     if(!authorize())return;
+    if(_firmware.busy()||_firmware.rebootPending()){error(409,"Wait for the firmware update to finish.");return;}
     JsonDocument doc;if(_server.arg("plain").length()>128||deserializeJson(doc,_server.arg("plain"))||!doc["slot"].is<unsigned>()||doc["slot"].as<unsigned>()>2){error(400,"Choose a slot from 1 to 3.");return;}
     unsigned selected=doc["slot"];_ble.releaseAll();_ble.selectSlot(selected);
     if(_ble.selected()!=selected){error(500,"Could not save selection.");return;}state();
   });
   _server.on("/api/config",HTTP_POST,[this](){
     if(!authorize())return;
+    if(_firmware.busy()||_firmware.rebootPending()){error(409,"Wait for the firmware update to finish.");return;}
     JsonDocument doc;if(_server.arg("plain").length()>1024||deserializeJson(doc,_server.arg("plain"))||!doc["generation"].is<uint32_t>()||!doc["order"].is<JsonArray>()||!doc["names"].is<JsonArray>()||doc["order"].size()!=3||doc["names"].size()!=3){error(400,"Invalid computer settings.");return;}
     uint8_t order[3];char names[3][33]={};
     for(unsigned i=0;i<3;++i){if(!doc["order"][i].is<unsigned>()||doc["order"][i].as<unsigned>()>=3||!doc["names"][i].is<const char *>()){error(400,"Invalid slot or name.");return;}order[i]=doc["order"][i];const char *name=doc["names"][i];if(!validName(name)){error(400,"Names must contain 1–32 bytes and no control characters.");return;}strcpy(names[i],name);}
@@ -52,6 +56,7 @@ void SetupServer::begin(){
   });
   _server.on("/api/wifi",HTTP_POST,[this](){
     if(!authorize())return;
+    if(_firmware.busy()||_firmware.rebootPending()){error(409,"Wait for the firmware update to finish.");return;}
     JsonDocument doc;
     if(_server.arg("plain").length()>512||deserializeJson(doc,_server.arg("plain"))||!doc["ssid"].is<const char *>()||!doc["password"].is<const char *>()){error(400,"Enter your Wi-Fi name and password.");return;}
     String ssid=doc["ssid"].as<String>(),password=doc["password"].as<String>();
@@ -60,6 +65,28 @@ void SetupServer::begin(){
     // Reply before changing networks; retain the last working credentials until success.
     _pendingSsid=ssid;_pendingPassword=password;_pending=true;_joinAt=millis();_networkError="";
     _server.send(202,"application/json","{\"connecting\":true}");
+  });
+  _server.on("/api/firmware",HTTP_POST,[this](){
+    if(!_uploadAuthorized){error(403,"Reopen the setup page and try again.");}
+    else if(_uploadFiles!=1||!_firmware.commit()){error(400,_firmware.error().length()?_firmware.error().c_str():"Choose one firmware.bin file.");}
+    else _server.send(202,"application/json","{\"restarting\":true}");
+    _uploadFiles=0;_uploadAuthorized=false;
+    if(!_firmware.rebootPending())_ble.setMaintenance(false);
+  },[this](){
+    feedRuntimeWatchdog();auto &upload=_server.upload();_uploadActivity=millis();
+    if(upload.status==UPLOAD_FILE_START){
+      _uploadAuthorized=_active&&_server.header("X-Setup-Token")==_token;
+      if(!_uploadAuthorized)return;
+      if(++_uploadFiles!=1){_firmware.abort("Upload only one firmware file");return;}
+      if(_firmware.start())_ble.setMaintenance(true);
+    }else if(_uploadAuthorized&&upload.status==UPLOAD_FILE_WRITE){_firmware.write(upload.buf,upload.currentSize);}
+    else if(_uploadAuthorized&&upload.status==UPLOAD_FILE_END){_firmware.finish();}
+    else if(upload.status==UPLOAD_FILE_ABORTED){_firmware.abort("Upload interrupted; current firmware is unchanged");_uploadFiles=0;_ble.setMaintenance(false);}
+  });
+  _server.on("/api/firmware/rollback",HTTP_POST,[this](){
+    if(!authorize())return;
+    if(!_firmware.rollback()){error(409,_firmware.error().c_str());return;}
+    _ble.setMaintenance(true);_server.send(202,"application/json","{\"restarting\":true}");
   });
   _server.onNotFound([this](){
     if(_ap&&_server.method()==HTTP_GET&&!_server.uri().startsWith("/api/")){
@@ -73,7 +100,7 @@ void SetupServer::begin(){
   if(_ssid.length()){WiFi.mode(WIFI_STA);_server.begin();joinNetwork();}else startPortal();
 }
 void SetupServer::startPortal(){
-  if(_ap)return;
+  if(_ap||_firmware.busy())return;
   // Simpler password is deferred; preserve the deployed credential in this build.
   Preferences prefs;prefs.begin("setup-wifi",false);String stored=prefs.getString("password","");
   if(stored.length()!=16){char text[17];snprintf(text,sizeof(text),"%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random());stored=text;prefs.putString("password",stored);}prefs.end();
@@ -89,6 +116,7 @@ void SetupServer::stopPortal(){
   Serial.println("[Setup] Setup hotspot closed; web UI remains available on home Wi-Fi");
 }
 void SetupServer::toggle(){
+  if(_firmware.busy())return;
   startPortal();
 }
 void SetupServer::joinNetwork(){
@@ -97,18 +125,20 @@ void SetupServer::joinNetwork(){
   Serial.println("[Setup] Connecting to saved Wi-Fi");
 }
 void SetupServer::radioComparison(){
-  if(_radioPaused||!_online||_ap||_pending||_joining){Serial.println("[Radio test] Needs idle setup server on normal Wi-Fi");return;}
+  if(_radioPaused||!_online||_ap||_pending||_joining||_firmware.busy()){Serial.println("[Radio test] Needs idle setup server on normal Wi-Fi");return;}
   // Volatile diagnostic only. Always reconnect after 45s; no saved settings change.
   if(!WiFi.mode(WIFI_OFF)){Serial.println("[Radio test] Could not stop Wi-Fi");return;}
   _radioPaused=true;_radioPauseAt=millis();_online=false;
   Serial.println("[Radio test] WIFI_OFF for45s; automatic restore follows");
 }
 void SetupServer::loop(){
+  _firmware.loop(USBManager::healthy());
   if(digitalRead(0)==LOW){if(!_pressed)_pressed=millis();if(!_handled&&millis()-_pressed>=3000){_handled=true;toggle();}}else{_pressed=0;_handled=false;}
   if(_radioPaused){
     if(millis()-_radioPauseAt>=45000){_radioPaused=false;WiFi.mode(WIFI_STA);joinNetwork();Serial.println("[Radio test] WIFI_RESTORE");}
     return;
   }
+  if(_firmware.busy()&&millis()-_uploadActivity>15000){_firmware.abort("Upload timed out; current firmware is unchanged");_uploadFiles=0;_ble.setMaintenance(false);}
 
   if(_ap)_dns.processNextRequest();
   _server.handleClient();

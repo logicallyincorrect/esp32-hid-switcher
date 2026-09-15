@@ -2,6 +2,7 @@
 #include <WebServer.h>
 #include <DNSServer.h>
 #include "BLEManager.h"
+#include "FirmwareUpdate.h"
 class SetupServer {
 public:
   explicit SetupServer(BLEManager &ble):_ble(ble),_server(80){}
@@ -11,6 +12,10 @@ public:
   void radioComparison();
 private:
   BLEManager &_ble;
+  FirmwareUpdate _firmware;
+  bool _uploadAuthorized=false;
+  unsigned _uploadFiles=0;
+  uint32_t _uploadActivity=0;
   WebServer _server;
   DNSServer _dns;
   bool _active=false,_ap=false,_handled=false,_joining=false,_online=false,_mdns=false;

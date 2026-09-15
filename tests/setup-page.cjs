@@ -8,12 +8,16 @@ const assert = require('assert');
  state.usb={healthy:true,interfaces:[{address:2,vid:0x3297,pid:0x1969,kind:'Keyboard',active:true},{address:3,vid:0x046d,pid:0xc548,kind:'Mouse',active:true}],recoveries:1,transfer_errors:1,open_errors:2};
  state.bluetooth={traffic:{window_ms:5000,mouse_in:625,mouse_tx:625,mouse_cap_hz:125},links:[{slot:0,encrypted:true,keyboard:true,mouse:true,interval_ms:15}],recoveries:0,send_errors:0};
  state.bluetooth.mouse_timing={arrival_spacing:{samples:100,mean_ms:8,max_ms:12,stddev_ms:1,p95_upper_ms:12},oldest_to_submission:{samples:50,mean_ms:9,max_ms:18,stddev_ms:3,p95_upper_ms:24}};
+ state.firmware={build:'12345678',slot:'app0',trial:false,rollback_available:true,uptime_seconds:120,max_bytes:3145728};
+ let uploads=0,rollbacks=0;
  let saved=0,selected=0,wifi=0;const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('http://setup.test/**',async route=>{
   const req=route.request(),path=new URL(req.url()).pathname;
   if(path==='/')return route.fulfill({contentType:'text/html',body:fs.readFileSync('web/index.html','utf8').replace('__SETUP_TOKEN__','test-token')});
   if(req.method()==='POST'){
    assert.equal(req.headers()['x-setup-token'],'test-token');
+   if(path==='/api/firmware'){uploads++;state.firmware.restarting=true;return route.fulfill({status:202,contentType:'application/json',body:'{"restarting":true}'});}
+   if(path==='/api/firmware/rollback'){rollbacks++;state.firmware.restarting=true;return route.fulfill({status:202,contentType:'application/json',body:'{"restarting":true}'});}
    const body=req.postDataJSON();
    if(path==='/api/config'){
     assert.equal(body.generation,state.generation);assert.equal(new Set(body.order).size,3);
@@ -50,6 +54,12 @@ const assert = require('assert');
  assert((await page.locator('#mouse-timing').textContent()).includes('Oldest combined movement wait: 9.00 ms average'));
  assert((await page.locator('#mouse-timing').textContent()).includes('Bluetooth submission spacing: waiting for movement'));
  assert((await page.locator('#mouse-settings-status').textContent()).includes('support has not been established'));
+ await page.locator('#firmware-file').setInputFiles({name:'bad.bin',mimeType:'application/octet-stream',buffer:Buffer.alloc(5)});
+ await page.locator('#firmware-install').click();await page.locator('#firmware-message.error').waitFor();assert.equal(uploads,0);
+ await page.locator('#firmware-file').setInputFiles({name:'firmware.bin',mimeType:'application/octet-stream',buffer:Buffer.alloc(1024)});
+ await page.locator('#firmware-install').click();await page.getByText('Upload verified. Restarting—this page will reconnect automatically.',{exact:true}).waitFor();assert.equal(uploads,1);
+ page.on('dialog',dialog=>dialog.accept());await page.locator('#firmware-rollback').click();
+ await page.getByText('Restoring previous firmware and restarting…',{exact:true}).waitFor();assert.equal(rollbacks,1);
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  assert.deepEqual(errors,[]);await browser.close();console.log('Setup page: names, slot moves, selection, validation, 375px layout PASS');
 })().catch(e=>{console.error(e);process.exit(1)});
