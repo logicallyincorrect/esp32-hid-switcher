@@ -28,6 +28,7 @@ static uint8_t reportMap[] = {
 };
 
 void BLEManager::begin(uint8_t slot) {
+  _configRequests=xQueueCreate(4,sizeof(ConfigRequest));assert(_configRequests);
   _events = xQueueCreate(32, sizeof(Event));
   assert(_events);
   if(!_prefs.begin("multi-host",false)){Serial.println("[Config] Cannot open persistent settings");abort();}
@@ -72,7 +73,17 @@ void BLEManager::begin(uint8_t slot) {
   _mouse=_hid->getInputReport(2);
   _mouse->setCallbacks(this);
   _mouse->setValue(empty,7);
+  auto configService=_server->createService("4d4c0001-8a15-4b4e-9d84-891537e66000");
+  _configStatus=configService->createCharacteristic("4d4c0002-8a15-4b4e-9d84-891537e66000",NIMBLE_PROPERTY::READ|NIMBLE_PROPERTY::READ_ENC,512);
+  _configCommand=configService->createCharacteristic("4d4c0003-8a15-4b4e-9d84-891537e66000",NIMBLE_PROPERTY::WRITE|NIMBLE_PROPERTY::WRITE_ENC,191);
+  _configCommand->setCallbacks(this);
+  _configReply=configService->createCharacteristic("4d4c0004-8a15-4b4e-9d84-891537e66000",NIMBLE_PROPERTY::READ|NIMBLE_PROPERTY::READ_ENC,512);
+  _configReply->setValue("{}");
+  updateConfigStatus();
   _server->start();
+  // Standard service-changed indication lets bonded hosts refresh their cache.
+  if(!_prefs.getBool("cli-gatt2",false)){_server->sendServiceChangedIndication();_prefs.putBool("cli-gatt2",true);}
+
   ControllerDiagnostics::reports(_input->getHandle(),_mouse->getHandle());
   // Existing hosts cached the keyboard-only GATT table. Queue the standard
   // Service Changed indication for bonded peers before they reconnect.
@@ -83,6 +94,7 @@ void BLEManager::begin(uint8_t slot) {
   auto adv = NimBLEDevice::getAdvertising();
   adv->setAppearance(HID_KEYBOARD);
   adv->addServiceUUID(_hid->getHidService()->getUUID());
+  adv->addServiceUUID(configService->getUUID());
   adv->enableScanResponse(true);
   adv->setName(DEVICE_NAME);
   adv->start();
@@ -177,7 +189,46 @@ void BLEManager::handle(const Event &e) {
 }
 
 
+void BLEManager::onWrite(NimBLECharacteristic *characteristic,NimBLEConnInfo &info){
+  if(characteristic!=_configCommand||!info.isEncrypted()||!info.isBonded())return;
+  const auto value=characteristic->getValue();if(value.size()==0||value.size()>=192)return;
+  ConfigRequest request{};request.handle=info.getConnHandle();request.identity=*info.getIdAddress().getBase();
+  memcpy(request.text,value.data(),value.size());xQueueSend(_configRequests,&request,0);
+}
+void BLEManager::processConfigCommand(){
+  ConfigRequest request;if(xQueueReceive(_configRequests,&request,0)!=pdTRUE)return;
+  auto p=peer(request.handle);ble_gap_conn_desc live;
+  if(!p||p->slot<0||ble_gap_conn_find(request.handle,&live)!=0||!live.sec_state.encrypted||!live.sec_state.bonded||
+     live.peer_id_addr.type!=request.identity.type||memcmp(live.peer_id_addr.val,request.identity.val,6))return;
+  JsonDocument command,response;
+  if(deserializeJson(command,request.text))return;
+  const char *id=command["id"]|"",*op=command["op"]|"";
+  if(strlen(id)!=36)return;
+  response["id"]=id;bool ok=false;const char *error="Invalid command or arguments";
+  const int slot=command["slot"]|0;
+  if(!strcmp(op,"select")&&command["slot"].is<int>()&&slot>=1&&slot<=3){selectSlot(slot-1);ok=selected()==unsigned(slot-1);}
+  else if(!strcmp(op,"name")&&slot>=1&&slot<=3&&command["name"].is<const char *>()){
+    const char *name=command["name"];const size_t len=strlen(name);bool valid=len>0&&len<=32;
+    for(size_t i=0;i<len;++i)if(uint8_t(name[i])<32||uint8_t(name[i])==127)valid=false;
+    if(valid){uint8_t order[]={0,1,2};char names[3][33];for(int i=0;i<3;++i)memcpy(names[i],_config.slots[i].name,33);memset(names[slot-1],0,33);memcpy(names[slot-1],name,len);ok=configure(order,names,_config.generation);}
+  }else if(!strcmp(op,"move")&&slot>=1&&slot<=3&&command["to"].is<int>()){
+    const int to=command["to"];if(to>=1&&to<=3){uint8_t order[]={0,1,2};const auto item=order[slot-1];if(slot<to)for(int i=slot-1;i<to-1;++i)order[i]=order[i+1];else for(int i=slot-1;i>to-1;--i)order[i]=order[i-1];order[to-1]=item;char names[3][33];for(int i=0;i<3;++i)memcpy(names[i],_config.slots[order[i]].name,33);ok=configure(order,names,_config.generation);}
+  }else if(!strcmp(op,"wifi")&&command["enabled"].is<bool>()){
+    ok=_wifiControl&&_wifiControl(_wifiContext,command["enabled"].as<bool>());if(!ok)error="Wi-Fi control unavailable or firmware update active";
+  }else if(!strcmp(op,"diagnostics")){
+    ok=true;auto result=response["result"].to<JsonObject>();result["send_errors"]=_totalTxFailed;result["recoveries"]=_recoveries;
+    result["mouse_spacing_ms"]=_mouseSubmissionSpacing.samples.mean()/1000.;result["newest_movement_wait_ms"]=_mouseNewestWait.mean()/1000.;result["interval_ms"]=mouseIntervalUs()/1000.;result["wifi_enabled"]=_wifiEnabled;result["wifi_connected"]=_wifiConnected;
+  }
+  response["ok"]=ok;if(!ok)response["error"]=error;
+  String value;serializeJson(response,value);_configReply->setValue(value.c_str());updateConfigStatus();
+}
+void BLEManager::updateConfigStatus(){
+  JsonDocument doc;doc["protocol"]=1;doc["device"]="Moonlander";doc["selected"]=selected()+1;doc["wifi_enabled"]=_wifiEnabled;doc["wifi_connected"]=_wifiConnected;
+  auto slots=doc["slots"].to<JsonArray>();for(unsigned i=0;i<3;++i){auto slot=slots.add<JsonObject>();slot["slot"]=i+1;slot["name"]=_config.slots[i].name;slot["assigned"]=bool(_assigned[i]);slot["connected"]=connected(i);}
+  String value;serializeJson(doc,value);_configStatus->setValue(value.c_str());
+}
 void BLEManager::loop() {
+  if(millis()-_lastConfigStatus>=1000){_lastConfigStatus=millis();updateConfigStatus();}
 
   portENTER_CRITICAL(&_eventMux); bool overflow = _eventOverflow; _eventOverflow = false; portEXIT_CRITICAL(&_eventMux);
   if (overflow) {
@@ -188,6 +239,7 @@ void BLEManager::loop() {
   }
   Event e;
   while (xQueueReceive(_events, &e, 0) == pdTRUE) handle(e);
+  processConfigCommand();
   for(auto &p:_peers)if(p.handle!=MultiHostRouter::NONE){
     ble_gap_conn_desc live;
     if(ble_gap_conn_find(p.handle,&live)!=0)continue;

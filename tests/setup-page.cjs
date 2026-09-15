@@ -57,7 +57,7 @@ const assert = require('assert');
  await page.locator('#firmware-file').setInputFiles({name:'bad.bin',mimeType:'application/octet-stream',buffer:Buffer.alloc(5)});
  await page.locator('#firmware-install').click();await page.locator('#firmware-message.error').waitFor();assert.equal(uploads,0);
  await page.locator('#firmware-file').setInputFiles({name:'firmware.bin',mimeType:'application/octet-stream',buffer:Buffer.alloc(1024)});
- await page.locator('#firmware-install').click();await page.getByText('Upload verified. Restarting—this page will reconnect automatically.',{exact:true}).waitFor();assert.equal(uploads,1);
+ await page.locator('#firmware-install').click();await page.getByText('Upload verified. Restarting with Wi-Fi off. Use the BLE CLI to enable Wi-Fi before reopening this page.',{exact:true}).waitFor();assert.equal(uploads,1);
  page.on('dialog',dialog=>dialog.accept());await page.locator('#firmware-rollback').click();
  await page.getByText('Restoring previous firmware and restarting…',{exact:true}).waitFor();assert.equal(rollbacks,1);
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));

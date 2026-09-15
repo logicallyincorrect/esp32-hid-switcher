@@ -10,6 +10,7 @@ public:
   void loop();
   void toggle();
   void radioComparison();
+  bool setRadio(bool enabled);
 private:
   BLEManager &_ble;
   FirmwareUpdate _firmware;
@@ -21,7 +22,7 @@ private:
   bool _active=false,_ap=false,_handled=false,_joining=false,_online=false,_mdns=false;
   uint32_t _pressed=0,_joinAt=0,_lostAt=0,_closeApAt=0;
   String _token,_ssid,_password,_pendingSsid,_pendingPassword,_networkError;
-  bool _pending=false,_radioPaused=false;
+  bool _pending=false,_radioPaused=false,_radioEnabled=false;
   uint32_t _radioPauseAt=0;
   void state();
   void startPortal();

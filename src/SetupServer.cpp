@@ -96,11 +96,14 @@ void SetupServer::begin(){
   char token[33];snprintf(token,sizeof(token),"%08lx%08lx%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random());_token=token;
   readNetwork(_ssid,_password);
   WiFi.persistent(false);WiFi.setHostname("moonlander");WiFi.setAutoReconnect(true);
+  WiFi.setAutoReconnect(false);WiFi.mode(WIFI_OFF);
+  _ble.setWiFiControl([](void *context,bool enabled){return static_cast<SetupServer *>(context)->setRadio(enabled);},this);
   _active=true;
-  if(_ssid.length()){WiFi.mode(WIFI_STA);_server.begin();joinNetwork();}else startPortal();
+  Serial.println("[Setup] Wi-Fi off. Use BLE CLI wifi on, or hold BOOT3s for setup.");
 }
 void SetupServer::startPortal(){
   if(_ap||_firmware.busy())return;
+  _radioEnabled=true;
   // Simpler password is deferred; preserve the deployed credential in this build.
   Preferences prefs;prefs.begin("setup-wifi",false);String stored=prefs.getString("password","");
   if(stored.length()!=16){char text[17];snprintf(text,sizeof(text),"%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random());stored=text;prefs.putString("password",stored);}prefs.end();
@@ -115,8 +118,24 @@ void SetupServer::stopPortal(){
   _dns.stop();WiFi.softAPdisconnect(true);WiFi.mode(WIFI_STA);_ap=false;_closeApAt=0;
   Serial.println("[Setup] Setup hotspot closed; web UI remains available on home Wi-Fi");
 }
+bool SetupServer::setRadio(bool enabled){
+  if(_firmware.busy())return false;
+  if(enabled==_radioEnabled&&!_radioPaused)return true;
+  _radioPaused=false;
+  if(enabled){
+    _radioEnabled=true;readNetwork(_ssid,_password);WiFi.setAutoReconnect(true);
+    if(_ssid.length()){WiFi.mode(WIFI_STA);_server.begin();joinNetwork();}else startPortal();
+  }else{
+    _dns.stop();_server.stop();if(_mdns){MDNS.end();_mdns=false;}
+    WiFi.setAutoReconnect(false);WiFi.mode(WIFI_OFF);
+    _radioEnabled=_online=_joining=_ap=_pending=false;_pendingSsid="";_pendingPassword="";_lostAt=_closeApAt=0;
+    Serial.println("[Setup] Wi-Fi off; BLE CLI remains available");
+  }
+  _ble.setWiFiState(_radioEnabled,_online);return true;
+}
 void SetupServer::toggle(){
   if(_firmware.busy())return;
+  if(!_radioEnabled)setRadio(true);
   startPortal();
 }
 void SetupServer::joinNetwork(){
@@ -133,7 +152,9 @@ void SetupServer::radioComparison(){
 }
 void SetupServer::loop(){
   _firmware.loop(USBManager::healthy());
+  _ble.setWiFiState(_radioEnabled,_online);
   if(digitalRead(0)==LOW){if(!_pressed)_pressed=millis();if(!_handled&&millis()-_pressed>=3000){_handled=true;toggle();}}else{_pressed=0;_handled=false;}
+  if(!_radioEnabled)return;
   if(_radioPaused){
     if(millis()-_radioPauseAt>=45000){_radioPaused=false;WiFi.mode(WIFI_STA);joinNetwork();Serial.println("[Radio test] WIFI_RESTORE");}
     return;

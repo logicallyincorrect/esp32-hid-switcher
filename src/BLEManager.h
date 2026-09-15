@@ -19,6 +19,9 @@ public:
   void begin(uint8_t slot);
   void loop();
   void flushInput();
+  void setWiFiControl(bool (*fn)(void *,bool),void *context){_wifiControl=fn;_wifiContext=context;}
+  void setWiFiState(bool enabled,bool connected){_wifiEnabled=enabled;_wifiConnected=connected;}
+
   void selectSlot(uint8_t slot);
   bool isConnected() { return _router.connected(_router.selected()); }
   void printStatus();
@@ -84,6 +87,16 @@ private:
   NimBLEHIDDevice *_hid = nullptr;
   NimBLECharacteristic *_input = nullptr;
   NimBLECharacteristic *_mouse = nullptr;
+  NimBLECharacteristic *_configStatus = nullptr,*_configCommand=nullptr,*_configReply=nullptr;
+  struct ConfigRequest {uint16_t handle;ble_addr_t identity;char text[192];};
+  QueueHandle_t _configRequests=nullptr;
+  bool (*_wifiControl)(void *,bool)=nullptr;void *_wifiContext=nullptr;
+  bool _wifiEnabled=false,_wifiConnected=false;
+  void processConfigCommand();
+  void onWrite(NimBLECharacteristic *,NimBLEConnInfo &) override;
+
+  uint32_t _lastConfigStatus=0;
+  void updateConfigStatus();
   MultiHostRouter _router;
   uint32_t _lastAdvertise = 0;
   void enqueue(Kind kind, const NimBLEConnInfo &info, uint16_t sub = 0, uint8_t reportId=1);
