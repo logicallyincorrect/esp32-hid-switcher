@@ -1,132 +1,147 @@
 #include "Bridge.h"
-#include "NVSUtils.h"
+#include "DeviceShortcut.h"
 #include <hid_usage_keyboard.h>
+#include <esp32-hal-rgb-led.h>
+#include <esp_log.h>
+#include "RuntimeHealth.h"
 
 uint8_t Bridge::_currentSlot = 0;
 BLEManager Bridge::_bleManager;
 Preferences Bridge::_preferences;
+static QueueHandle_t reports;
+static portMUX_TYPE reportMux = portMUX_INITIALIZER_UNLOCKED;
+static bool reportOverflow = false;
+static bool shortcutHeld = false;
+static bool keyboardHeld = false, mouseBlocked = false;
+static uint8_t mouseButtonsHeld = 0;
+struct Report { bool mouse=false; uint8_t bytes[8]={}; MouseReport movement; uint32_t received=0; };
 
 void Bridge::begin() {
-  // 1. Load saved slot
-  _preferences.begin("usb-ble", true);
+  startRuntimeWatchdog();
+  // Per-report stack logging adds latency. Keep debug code available in the
+  // SDK, but only emit warnings/errors during normal keyboard/mouse use.
+  esp_log_level_set("*",ESP_LOG_WARN);
+  _preferences.begin("multi-select", false);
   _currentSlot = _preferences.getUChar("slot", 0);
-  if (_currentSlot >= NUM_DEVICE_SLOTS)
-    _currentSlot = 0;
-  _preferences.end();
-
-  Serial.printf("[Config] Starting on device slot %d\n", _currentSlot + 1);
-
-  // 2. Load bonds for this slot
-  NVSUtils::loadSlotBonds(_currentSlot);
-
-  // 3. Init BLE
-  const char *deviceNames[NUM_DEVICE_SLOTS] = {DEVICE_NAME_1, DEVICE_NAME_2,
-                                               DEVICE_NAME_3};
-  _bleManager.begin(_currentSlot, deviceNames[_currentSlot]);
-
-  // 4. Init USB
+  if (_currentSlot >= NUM_DEVICE_SLOTS) _currentSlot = 0;
+  reports = xQueueCreate(64, sizeof(Report));
+  assert(reports);
+  _bleManager.begin(_currentSlot);
+  _currentSlot=_bleManager.selected();
   USBManager::setKeyboardCallback(onKeyboardReport);
+  USBManager::setMouseCallback(onMouseReport);
   USBManager::begin();
+  Serial.printf("[Setup] Pair %s on computer 1, select slot 2 and pair computer 2, then slot 3.\n",DEVICE_NAME);
+  Serial.println("[Setup] Control+Command+1/2/3 selects a slot. UART digits 1/2/3 also select; ? shows status.");
 }
 
 void Bridge::loop() {
-  static unsigned long lastStatus = 0;
-  if (millis() - lastStatus > 5000) {
-    lastStatus = millis();
-    bool connected = _bleManager.isConnected();
-    Serial.printf("[Status] Slot %d | BLE: %s\n", _currentSlot + 1,
-                  connected ? "CONNECTED" : "waiting for pairing...");
+  feedRuntimeWatchdog();
+  if(USBManager::service()){_bleManager.releaseAll();xQueueReset(reports);shortcutHeld=keyboardHeld;mouseBlocked=mouseButtonsHeld!=0;}
+  static uint32_t previousLoop=0,maxLoopGap=0,maxSetup=0;
+  const uint32_t loopStart=micros();
+  if(previousLoop && loopStart-previousLoop>maxLoopGap)maxLoopGap=loopStart-previousLoop;
+  previousLoop=loopStart;
+
+  _bleManager.loop();
+  static uint32_t inputEpoch=0;
+  if(inputEpoch!=_bleManager.inputEpoch()){
+    inputEpoch=_bleManager.inputEpoch();xQueueReset(reports);
+    _bleManager.releaseAll();shortcutHeld=true;mouseBlocked=true;
+  }
+  if(_currentSlot!=_bleManager.selected()) {
+    _currentSlot=_bleManager.selected();shortcutHeld=keyboardHeld;mouseBlocked=mouseButtonsHeld!=0;
+    xQueueReset(reports);
+  }
+  // Freenove GPIO2 LED pulses the slot number; RGB48 gives ready/offline feedback.
+  const uint32_t phase = millis() % 2000;
+  if (LED_FEEDBACK_PIN >= 0)
+    digitalWrite(LED_FEEDBACK_PIN, phase < (_currentSlot + 1) * 300 && phase % 300 < 120);
+  const bool lit = _bleManager.isConnected() || (millis() % 1000 < 350);
+  const uint32_t color = lit ? (_currentSlot == 0 ? 0x000018 : (_currentSlot == 1 ? 0x001800 : 0x140014)) : 0;
+  static uint32_t previousColor = 0xffffffff;
+  if (LED_RGB_PIN >= 0 && color != previousColor) {
+    rgbLedWrite(LED_RGB_PIN, (color >> 16) & 255, (color >> 8) & 255, color & 255);
+    previousColor = color;
+  }
+  while (Serial.available()) {
+    const char command = Serial.read();
+    if (command >= '1' && command <= '3') {
+      shortcutHeld = keyboardHeld;
+      switchToSlot(command - '1');
+    } else if(command=='u')USBManager::requestRecovery();
+    else if (command == '?') {
+      _bleManager.printStatus();
+      USBManager::printDiagnostics();
+    }
+  }
+  portENTER_CRITICAL(&reportMux); bool overflow = reportOverflow; reportOverflow = false; portEXIT_CRITICAL(&reportMux);
+  if (overflow) {
+    xQueueReset(reports);
+    _bleManager.releaseAll();
+    shortcutHeld = keyboardHeld;mouseBlocked=true;
+    Serial.println("[USB] Input queue overflow; released keys, waiting for physical release");
+  }
+  Report report;
+  while (xQueueReceive(reports, &report, 0) == pdTRUE) {
+    if(report.mouse) {
+      mouseButtonsHeld=report.movement.buttons;
+      if(mouseBlocked){if(report.movement.buttons==0)mouseBlocked=false;else report.movement.buttons=0;}
+      _bleManager.sendMouseReport(report.movement,report.received);continue;
+    }
+    bool released = report.bytes[0] == 0;
+    for (int i = 2; i < 8; ++i) released &= report.bytes[i] == 0;
+    keyboardHeld=!released;
+    if (shortcutHeld) {
+      if (released) shortcutHeld = false;
+      continue;
+    }
+    // Log only candidate Control+Command number shortcuts, never ordinary typing.
+    for (int i = 2; i < 8; ++i)
+      if ((report.bytes[0] & 0x11) && (report.bytes[0] & 0x88) &&
+          report.bytes[i] >= 0x1e && report.bytes[i] <= 0x20)
+        Serial.printf("[Shortcut] Control+Command+%u modifiers=0x%02x\n", report.bytes[i] - 0x1d, report.bytes[0]);
+    if (checkDeviceSwitchCombo(report.bytes + 2, report.bytes[0])) {
+      shortcutHeld = true;
+      _bleManager.releaseAll();
+      continue;
+    }
+    _bleManager.sendKeyboardReport(report.bytes + 2, report.bytes[0]);
+  }
+  // Drain new USB input before submitting to BLE in this same loop iteration.
+  _bleManager.flushInput();
+  static uint32_t lastStatus = 0;
+  if (millis() - lastStatus >= 5000) {
+    lastStatus = millis(); _bleManager.printStatus();
+    Serial.printf("[Loop timing] max_gap_us=%lu max_web_us=%lu\n",(unsigned long)maxLoopGap,(unsigned long)maxSetup);
+    maxLoopGap=maxSetup=0;
   }
 }
 
 void Bridge::switchToSlot(uint8_t slot) {
-  if (slot >= NUM_DEVICE_SLOTS)
-    return;
-
-  if (slot == _currentSlot) {
-    Serial.printf("[BLE] Already on slot %d\n", slot + 1);
-    if (LED_FEEDBACK_PIN >= 0) {
-      for (int i = 0; i <= slot; i++) {
-        digitalWrite(LED_FEEDBACK_PIN, HIGH);
-        delay(150);
-        digitalWrite(LED_FEEDBACK_PIN, LOW);
-        delay(150);
-      }
-    }
-    return;
-  }
-
-  Serial.printf("[BLE] Switching from slot %d to slot %d\n", _currentSlot + 1,
-                slot + 1);
-
-  // 1. Save current BLE bonds
-  NVSUtils::saveSlotBonds(_currentSlot);
-
-  // 2. Save new slot index
-  _preferences.begin("usb-ble", false);
-  _preferences.putUChar("slot", slot);
-  _preferences.end();
-
-  // 3. LED feedback
-  if (LED_FEEDBACK_PIN >= 0) {
-    for (int i = 0; i <= slot; i++) {
-      digitalWrite(LED_FEEDBACK_PIN, HIGH);
-      delay(150);
-      digitalWrite(LED_FEEDBACK_PIN, LOW);
-      delay(150);
-    }
-  }
-
-  // 4. Cleanup USB
-  usb_host_device_free_all();
-
-  Serial.println("[System] Restarting to apply new slot settings...");
-  delay(500);
-  ESP.restart();
+  if (slot >= NUM_DEVICE_SLOTS) return;
+  _bleManager.selectSlot(slot);
+  mouseBlocked=mouseButtonsHeld!=0;
+  _currentSlot=_bleManager.selected();
 }
 
 void Bridge::onKeyboardReport(const uint8_t *data, size_t length) {
-  if (length < sizeof(hid_keyboard_input_report_boot_t))
-    return;
-
-  hid_keyboard_input_report_boot_t *kb_report =
-      (hid_keyboard_input_report_boot_t *)data;
-
-  // Check for device switching combo
-  if (checkDeviceSwitchCombo(kb_report->key)) {
-    return;
+  if (length < 8) return;
+  Report report; memcpy(report.bytes, data, 8);
+  if (xQueueSend(reports, &report, 0) != pdTRUE) {
+    portENTER_CRITICAL(&reportMux); reportOverflow = true; portEXIT_CRITICAL(&reportMux);
   }
-
-  // Debug output
-  Serial.printf("[KB] mod:0x%02X keys:[%02X %02X %02X %02X %02X %02X]\n",
-                kb_report->modifier.val, kb_report->key[0], kb_report->key[1],
-                kb_report->key[2], kb_report->key[3], kb_report->key[4],
-                kb_report->key[5]);
-
-  // Forward to BLE
-  _bleManager.sendKeyboardReport(kb_report->key, kb_report->modifier.val);
 }
 
-bool Bridge::checkDeviceSwitchCombo(const uint8_t *keys) {
-  if (!ENABLE_DEVICE_SWITCHING)
-    return false;
+bool Bridge::checkDeviceSwitchCombo(const uint8_t *keys, uint8_t modifiers) {
+  if (!ENABLE_DEVICE_SWITCHING) return false;
+  const int slot = deviceSwitchSlot(keys, modifiers);
+  if (slot < 0) return false;
+  switchToSlot(slot);
+  return true;
+}
 
-  bool hasScrollLock = false;
-  uint8_t numberKey = 0;
-
-  for (int i = 0; i < 6; i++) {
-    if (keys[i] == HID_KEY_SCROLL_LOCK)
-      hasScrollLock = true;
-    if (keys[i] >= HID_KEY_1 && keys[i] <= HID_KEY_3) {
-      numberKey = keys[i] - HID_KEY_1 + 1;
-    }
-  }
-
-  if (hasScrollLock && numberKey > 0 && numberKey <= NUM_DEVICE_SLOTS) {
-    Serial.printf("[Switch] Scroll Lock + %d detected\n", numberKey);
-    switchToSlot(numberKey - 1);
-    return true;
-  }
-
-  return false;
+void Bridge::onMouseReport(const MouseReport &mouse) {
+  Report report;report.mouse=true;report.movement=mouse;report.received=micros();
+  if(xQueueSend(reports,&report,0)!=pdTRUE){portENTER_CRITICAL(&reportMux);reportOverflow=true;portEXIT_CRITICAL(&reportMux);}
 }

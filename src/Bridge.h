@@ -26,8 +26,7 @@ public:
   static void loop();
 
   /**
-   * @brief Switches the active device slot, saves bonds, and restarts the
-   * ESP32.
+   * @brief Switches the selected host while retaining all BLE connections.
    * @param slot New slot index (0-based).
    */
   static void switchToSlot(uint8_t slot);
@@ -39,10 +38,11 @@ private:
 
   /** @brief Callback for processing USB keyboard reports. */
   static void onKeyboardReport(const uint8_t *data, size_t length);
+  static void onMouseReport(const MouseReport &report);
 
   /** @brief Checks if the current keyboard input matches the device switch
    * combo. */
-  static bool checkDeviceSwitchCombo(const uint8_t *keys);
+  static bool checkDeviceSwitchCombo(const uint8_t *keys, uint8_t modifiers);
 };
 
 #endif // BRIDGE_H

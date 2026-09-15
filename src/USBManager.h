@@ -9,9 +9,13 @@
 #include "hid_host.h"
 #include "usb/usb_host.h"
 #include <Arduino.h>
+#include "MouseReport.h"
+#include <ArduinoJson.h>
 
 /** @brief Callback type for keyboard reports. */
 typedef void (*KeyboardReportCallback)(const uint8_t *data, size_t length);
+
+typedef void (*MouseReportCallback)(const MouseReport &report);
 
 class USBManager {
 public:
@@ -20,13 +24,21 @@ public:
    * Spawns background tasks for USB event handling.
    */
   static void begin();
+  static void printDiagnostics();
+  static void appendStatus(JsonObject out);
+  static bool service();
+  static void requestRecovery();
+  static bool healthy();
 
   /** @brief Sets the callback for incoming keyboard reports. */
   static void setKeyboardCallback(KeyboardReportCallback cb) {
     _keyboardCb = cb;
   }
 
+  static void setMouseCallback(MouseReportCallback cb) { _mouseCb=cb; }
+
 private:
+  static MouseReportCallback _mouseCb;
   static KeyboardReportCallback _keyboardCb;
 
   static void usb_lib_task(void *arg);

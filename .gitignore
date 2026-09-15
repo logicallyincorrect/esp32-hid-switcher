@@ -1,3 +1,18 @@
 .pio/
 .vscode/
 .aider*
+
+.venv/
+artifacts/
+
+# pioarduino hybrid SDK build outputs
+.dummy/
+managed_components/
+sdkconfig.defaults
+sdkconfig.esp32s3_usb_ble
+
+cli/build/
+
+# Generated web header and host-test dependencies
+src/SetupPage.h
+tests/node_modules/

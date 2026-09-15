@@ -3,6 +3,7 @@
 #include <Arduino.h>
 
 void setup() {
+  Serial.setTxBufferSize(2048); // Keep periodic diagnostics off the input path.
   Serial.begin(115200);
   delay(1000);
 
@@ -22,12 +23,12 @@ void setup() {
 
   Serial.println();
   Serial.println("╔════════════════════════════════════════════════╗");
-  Serial.println("║  READY - Connect USB devices via hub           ║");
+  Serial.println("║  READY - USB keyboard / three BLE hosts           ║");
   Serial.println("╚════════════════════════════════════════════════╝");
   Serial.println();
 }
 
 void loop() {
   Bridge::loop();
-  delay(10);
+  delay(1);
 }
