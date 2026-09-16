@@ -73,11 +73,6 @@ int main(int argc,char **argv){
   save("name-04.txt",name);name.raw(40);name.raw(0);name.drain();save("name-05.txt",name);
   name.press('Y');name.press('1');save("name-06.txt",name);
   assert(name.b.names[1]=="Studio Mac");
-  Fixture mouse;mouse.open();save("mouse-01.txt",mouse);
-  mouse.press('2');save("mouse-02.txt",mouse);
-  mouse.press('1');save("mouse-03.txt",mouse);
-  mouse.press('1');save("mouse-04.txt",mouse);
-  mouse.menu.mouse(8,mouse.b.now);mouse.menu.mouse(0,mouse.b.now);mouse.drain();save("mouse-05.txt",mouse);
-  mouse.press('y');save("mouse-06.txt",mouse);
-  assert(mouse.b.shortcuts.bindings[1].buttons==8);
+  name.back();save("name-07.txt",name);
+  name.back();assert(!name.menu.active());
 }

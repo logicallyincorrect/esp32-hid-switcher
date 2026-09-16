@@ -66,11 +66,9 @@ Press Escape to go back without saving the current input. Escape at the main men
 
 The RGB LED is yellow in configuration mode. Normal keyboard and mouse input stops while the menu is open.
 
-**Rename a computer**
+![Streaming device configuration in a text editor](docs/images/configuration.gif)
 
-![Rename a computer through the device text menu](docs/images/rename-computer.gif)
-
-Simulated menu output captured in TextEdit. Playback is accelerated.
+Simulated streaming menu output captured in TextEdit.
 
 ## Shortcuts
 
@@ -95,12 +93,6 @@ To change a shortcut:
 For Slot, record only modifier keys. Use those keys with 1, 2, or 3 to select a slot. Mouse shortcuts can include keyboard modifiers. Wheel and movement gestures are not supported.
 
 **Clear keyboard** and **Clear mouse** remove only the specified input type. Recording one input type keeps the other shortcut. **Restore defaults** resets all shortcuts. Each change requires confirmation. A recording expires after 60 seconds.
-
-**Record a mouse shortcut**
-
-![Record mouse button 4 as a Cycle shortcut and confirm the assignment](docs/images/record-mouse-shortcut.gif)
-
-Simulated menu output captured in TextEdit. Playback is accelerated.
 
 ## Forget a pairing
 
