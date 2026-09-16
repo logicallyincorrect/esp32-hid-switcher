@@ -30,6 +30,7 @@ public:
   bool captureMouse(uint8_t buttons){return _shortcutRecorder.mouse(buttons);}
   int shortcutAction(const uint8_t *keys,uint8_t modifiers,uint8_t buttons,uint8_t kind=0)const{return matchingShortcut(_shortcuts,keys,modifiers,buttons,kind);}
   void selectSlot(uint8_t slot);
+  String forgetComputer(unsigned slot);
   uint32_t menuSession()const{return _connectionRevision;}
   uint32_t menuReportSpacing()const{return (mouseIntervalUs()+999)/1000;}
   bool sendMenuReport(const uint8_t *report){return _router.tryKeyboard(report);}
@@ -63,6 +64,7 @@ private:
     int slot = -1;
     uint8_t pairingSlot = 0;
     bool encrypted = false;
+    bool forgetting = false;
     uint8_t subscribed = 0;
     ble_addr_t identity = {};
     ReconnectGuard recovery;

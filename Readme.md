@@ -51,7 +51,7 @@ Use a text editor, not a command shell. Keep the document selected until you exi
 
 | Menu | Function |
 | --- | --- |
-| Computers | Rename, move, or select a computer |
+| Computers | Rename, move, select, or forget a computer |
 | Shortcuts | Record, clear, or restore shortcuts |
 | Bluetooth name | Change the device name |
 | Diagnostics | Show USB status, Bluetooth errors, and report times |
@@ -87,6 +87,17 @@ To change a shortcut:
 For Slot, record only modifier keys. Use those keys with 1, 2, or 3 to select a slot. Mouse shortcuts can include keyboard modifiers. Wheel and movement gestures are not supported.
 
 **Clear keyboard** and **Clear mouse** remove only the specified input type. Recording one input type keeps the other shortcut. **Restore defaults** resets all shortcuts. Each change requires confirmation. A recording expires after 60 seconds.
+
+## Forget a pairing
+
+1. Select **Computers**, then **Forget pairing**.
+2. Select the computer's slot.
+3. Check the displayed name.
+4. Press `y` or `Y` to confirm.
+
+The bridge disconnects that computer and clears its pairing. The slot name, shortcuts, and other pairings stay saved. If you forget the current computer, setup closes when it disconnects. Press ESC or `n` to cancel before removal.
+
+Also forget HID SWITCHER BLE in that computer's Bluetooth settings before pairing again. Select the empty slot to pair a replacement computer.
 
 ## Status and recovery
 

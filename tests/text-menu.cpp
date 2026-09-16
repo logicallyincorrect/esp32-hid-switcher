@@ -33,6 +33,9 @@ struct FakeBackend {
   bool renameDevice(const std::string &value){name=value;++saves;return true;}
   bool clearBinding(unsigned action,unsigned kind){auto &b=shortcuts.bindings[shortcutBindingIndex(action,kind)];b={};b.kind=kind;++saves;return true;}
   bool resetBindings(){shortcuts={};++saves;return true;}
+  bool pairs[3]={true,true,false};unsigned forgotten=99;
+  bool paired(unsigned i){return pairs[i];}
+  std::string forget(unsigned i){forgotten=i;pairs[i]=false;if(i==slot){online=false;++revision;}return "";}
   uint32_t now=0;
   bool beginRecord(unsigned action){recorder.begin(action,now,0);return true;}
   int recordState(){return recorder.state;}std::string recordLabel(){return "Test chord";}
@@ -115,6 +118,17 @@ int main(){
   const auto first=textKey('1');interrupted.raw(first.code);interrupted.raw(0);assert(interrupted.menu.busy());
   interrupted.raw(41);interrupted.raw(0);interrupted.drain();assert(interrupted.menu.active());
   interrupted.menu.button(true,interrupted.b.now);assert(!interrupted.menu.active());
+  Fixture forget;forget.open();forget.press('1');forget.press('4');forget.press('2');
+  assert(forget.b.output.find("Forget slot 2: Work?")!=std::string::npos);
+  assert(forget.b.forgotten==99);forget.press('N');assert(forget.b.forgotten==99);
+  forget.press('4');forget.press('2');forget.back();assert(forget.b.forgotten==99);
+  forget.press('2');forget.press('Y');assert(forget.b.forgotten==1&&forget.menu.active());
+  assert(forget.b.pairs[0]&&!forget.b.pairs[1]&&forget.b.names[1]=="Work");
+  forget.press('4');forget.press('3');assert(forget.b.output.find("already unpaired")!=std::string::npos);
+  forget.press('4');forget.press('1');forget.press('y');assert(!forget.menu.active()&&!forget.b.pairs[0]);
+  Fixture cancelForget;cancelForget.open();cancelForget.press('1');cancelForget.press('4');cancelForget.press('2');
+  cancelForget.raw(textKey('y').code);cancelForget.raw(0);assert(cancelForget.menu.busy());
+  cancelForget.back();assert(cancelForget.b.forgotten==99&&cancelForget.menu.active());
   Fixture stalled;stalled.b.accept=false;stalled.menu.button(true,0);stalled.menu.button(true,3000);assert(stalled.menu.active());
   stalled.raw(41);assert(!stalled.menu.active()&&!stalled.menu.busy());
   Fixture offline;offline.b.online=false;offline.menu.button(true,0);offline.menu.button(true,3000);assert(!offline.menu.active());

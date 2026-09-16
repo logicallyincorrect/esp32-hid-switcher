@@ -5,7 +5,7 @@
 // Platform-independent state machine. Backend owns settings and BLE transport.
 template<class Backend> class DeviceMenu {
   enum Page { Main,Computers,RenameSlot,RenameText,RenameConfirm,MoveFrom,MoveTo,MoveConfirm,
-              SelectSlot,SelectDrain,Actions,Binding,RecordArming,Recording,RecordConfirm,
+              SelectSlot,SelectDrain,ForgetSlot,ForgetConfirm,ForgetDrain,Actions,Binding,RecordArming,Recording,RecordConfirm,
               ClearConfirm,ResetConfirm,NameText,NameConfirm };
   Backend &_backend;
   TextConsole _output;
@@ -19,7 +19,7 @@ template<class Backend> class DeviceMenu {
   void print(const std::string &text){if(!_output.append(text))close();}
   void prompt(const std::string &text){_textReady=false;print("\n"+text+(_page==Main?"":"\nESC Back")+"\n> ");}
   void main(){_page=Main;prompt("1 Computers\n2 Shortcuts\n3 Bluetooth name\n4 Diagnostics\nESC Exit");}
-  void computers(){_page=Computers;prompt(_backend.computers()+"1 Rename\n2 Move\n3 Select");}
+  void computers(){_page=Computers;prompt(_backend.computers()+"1 Rename\n2 Move\n3 Select\n4 Forget pairing");}
   void actions(){
     _page=Actions;std::string text;
     for(unsigned i=0;i<4;++i)text+=std::to_string(i+1)+" "+_backend.binding(i)+"\n\n";
@@ -35,7 +35,8 @@ template<class Backend> class DeviceMenu {
     case Computers:case Actions:case NameText:case NameConfirm:main();break;
     case RenameSlot:computers();break;
     case RenameText:case RenameConfirm:_page=RenameSlot;prompt("Rename slot:\n"+_backend.computers());break;
-    case MoveFrom:case SelectSlot:case SelectDrain:computers();break;
+    case MoveFrom:case SelectSlot:case SelectDrain:case ForgetSlot:computers();break;
+    case ForgetConfirm:case ForgetDrain:_page=ForgetSlot;prompt("Forget pairing for slot:\n"+_backend.computers());break;
     case MoveTo:case MoveConfirm:_page=MoveFrom;prompt("Move from slot:\n"+_backend.computers());break;
     case Binding:case ResetConfirm:actions();break;
     case RecordArming:case Recording:case RecordConfirm:case ClearConfirm:binding();break;
@@ -64,7 +65,17 @@ template<class Backend> class DeviceMenu {
       if(c=='1'){_page=RenameSlot;prompt("Rename slot:\n"+_backend.computers());}
       else if(c=='2'){_page=MoveFrom;prompt("Move from slot:\n"+_backend.computers());}
       else if(c=='3'){_page=SelectSlot;prompt("Select a slot. This closes the menu.\n"+_backend.computers());}
+      else if(c=='4'){_page=ForgetSlot;prompt("Forget pairing for slot:\n"+_backend.computers());}
       break;
+    case ForgetSlot:
+      if(c>='1'&&c<='3'){
+        _slot=number(c);
+        if(!_backend.paired(_slot)){prompt("This slot is already unpaired.");computers();break;}
+        _page=ForgetConfirm;prompt("Forget slot "+std::to_string(_slot+1)+": "+_backend.computerName(_slot)+"?\nThis disconnects that computer. Its name and shortcuts stay saved.\ny Yes\nn No");
+      }break;
+    case ForgetConfirm:
+      if(c=='y'){_page=ForgetDrain;prompt("Removing pairing. Also forget this device in that computer's Bluetooth settings before pairing again.");}
+      else if(c=='n')computers();break;
     case RenameSlot:
       if(c>='1'&&c<='3'){_slot=number(c);_name.clear();_page=RenameText;prompt("Current computer name: "+_backend.computerName(_slot)+"\nNew name (ASCII, 32 characters). Enter to review.");}break;
     case MoveFrom:
@@ -123,7 +134,7 @@ public:
       bool held=false;for(auto key:previous)if(key==41)held=true;
       if(!held)back();return true;
     }
-    if(!_released||(_output.busy()&&!_textReady)||_page==Recording||_page==RecordArming||_page==SelectDrain)return true;
+    if(!_released||(_output.busy()&&!_textReady)||_page==Recording||_page==RecordArming||_page==SelectDrain||_page==ForgetDrain)return true;
     for(unsigned i=0;i<6;++i)if(keys[i]){
       bool held=false;for(auto k:previous)if(k==keys[i])held=true;
       if(!held){
@@ -148,6 +159,11 @@ public:
     if(_output.busy())return;
     if(_page==NameText||_page==RenameText)_textReady=true;
     if(_page==SelectDrain){const auto slot=_destination;close();_backend.select(slot);return;}
+    if(_page==ForgetDrain){
+      const auto error=_backend.forget(_slot);
+      if(!_backend.connected()||_backend.session()!=_session){close();return;}
+      prompt(error.empty()?"Pairing removed. Slot available.":error);computers();return;
+    }
     if(_page==RecordArming){
       if(_backend.beginRecord(_action)){_page=Recording;_activity=now;}
       else {prompt("Could not start recording.");binding();}

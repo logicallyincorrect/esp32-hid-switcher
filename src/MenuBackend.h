@@ -29,7 +29,7 @@ public:
     std::string text;
     for(unsigned i=0;i<3;++i){
       text+=std::to_string(i+1)+" "+_ble.config().slots[i].name;
-      text+=_ble.connected(i)?" [connected]":(_ble.config().slots[i].assigned?" [disconnected]":" [unpaired]");
+      text+=_ble.connected(i)?" [connected]":(_ble.config().slots[i].assigned==2?" [removal pending]":(_ble.config().slots[i].assigned?" [disconnected]":" [unpaired]"));
       if(i==selected())text+=" *";
       text+="\n";
     }
@@ -55,6 +55,8 @@ public:
     for(unsigned i=0;i<3;++i)memcpy(names[i],_ble.config().slots[order[i]].name,33);
     return _ble.configure(order,names,_ble.config().generation);
   }
+  bool paired(unsigned slot){return _ble.config().slots[slot].assigned!=0;}
+  std::string forget(unsigned slot){return _ble.forgetComputer(slot).c_str();}
   bool renameDevice(const std::string &name){return _ble.setDeviceName(name.c_str());}
   bool clearBinding(unsigned action,unsigned kind){return command("shortcut-clear",action,kind);}
   bool resetBindings(){return command("shortcuts-reset");}

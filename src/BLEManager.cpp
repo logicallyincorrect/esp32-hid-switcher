@@ -1,5 +1,7 @@
 #include "BLEManager.h"
 #include "Config.h"
+#include "ForgetPairing.h"
+#include <nimble/nimble/host/include/host/ble_store.h>
 #include "ControllerDiagnostics.h"
 #include <nimble/nimble/host/include/host/ble_gatt.h>
 #include <nimble/nimble/host/include/host/ble_l2cap.h>
@@ -58,6 +60,7 @@ void BLEManager::begin(uint8_t slot) {
   _deviceName=_prefs.getString("ble-name",DEVICE_NAME);
   if(!validDeviceName(_deviceName.c_str(),_deviceName.length()))_deviceName=DEVICE_NAME;
   NimBLEDevice::init(_deviceName.c_str());
+  for(unsigned i=0;i<3;++i)if(_config.slots[i].assigned==2)forgetComputer(i);
   Serial.printf("[BLE diagnostic] restored bonds=%u\n",NimBLEDevice::getNumBonds());
   // The bridge has no display or passkey entry UI. Use encrypted bonded pairing.
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
@@ -115,7 +118,7 @@ BLEManager::Peer *BLEManager::peer(uint16_t handle) {
 }
 int BLEManager::knownSlot(const ble_addr_t &identity) {
   for (int i = 0; i < 3; ++i)
-    if (_assigned[i] && _identities[i].type == identity.type &&
+    if (_config.slots[i].assigned==1 && _identities[i].type == identity.type &&
         memcmp(_identities[i].val, identity.val, 6) == 0) return i;
   return -1;
 }
@@ -136,7 +139,10 @@ void BLEManager::handle(const Event &e) {
   // Ignore stale queued events for connections that have already gone away.
   ble_gap_conn_desc live;
   if (ble_gap_conn_find(e.handle, &live) != 0) return;
+  for(const auto &stored:_config.slots)if(stored.assigned==2&&stored.type==live.peer_id_addr.type&&
+    !memcmp(stored.address,live.peer_id_addr.val,6)){_server->disconnect(e.handle);return;}
   auto p = peer(e.handle);
+  if(p&&p->forgetting){_server->disconnect(e.handle);return;}
   if (!p) {
     for (auto &candidate : _peers)
       if (candidate.handle == MultiHostRouter::NONE) { p = &candidate; break; }
@@ -201,7 +207,7 @@ void BLEManager::loop() {
   }
   Event e;
   while (xQueueReceive(_events, &e, 0) == pdTRUE) handle(e);
-  for(auto &p:_peers)if(p.handle!=MultiHostRouter::NONE){
+  for(auto &p:_peers)if(p.handle!=MultiHostRouter::NONE&&!p.forgetting){
     ble_gap_conn_desc live;
     if(ble_gap_conn_find(p.handle,&live)!=0)continue;
     // Bonded reconnections can restore encryption without the callback sequence
@@ -502,6 +508,38 @@ bool BLEManager::setDeviceName(const String &name) {
   if(!apply(name)){apply(_deviceName);return false;}
   if(_prefs.putString("ble-name",name)!=name.length()){apply(_deviceName);return false;}
   _deviceName=name;return true;
+}
+
+String BLEManager::forgetComputer(unsigned slot){
+  if(slot>=3)return "Choose a slot from 1 to 3.";
+  for(const auto &p:_peers)if(p.handle!=MultiHostRouter::NONE&&p.slot<0)return "Wait for pairing to finish, then retry.";
+  const auto result=forgetPairing(_config,slot,
+    [this](const SlotConfig &next){return saveConfig(next);},
+    [this,slot](const SlotConfig::Slot &stored){
+      // Block stale queued authentication/subscription events until disconnect.
+      for(auto &p:_peers)if(p.slot==int(slot)&&p.handle!=MultiHostRouter::NONE){
+        p.forgetting=true;
+        if(slot==selected()){releaseAll();++_connectionRevision;}
+        _router.disconnect(p.handle);
+        if(_server)_server->disconnect(p.handle);
+      }
+      applyIdentities();
+      // NimBLE requires advertising to stop before removing a peer's IRK.
+      auto advertising=_server?NimBLEDevice::getAdvertising():nullptr;
+      const bool restart=advertising&&advertising->isAdvertising();
+      if(restart&&!advertising->stop())return false;
+      const NimBLEAddress address(stored.address,stored.type);
+      const int rc=ble_gap_unpair(address.getBase());
+      // A retry after power loss may find the bond already absent. Complete
+      // all per-peer records explicitly; unpair alone can hide store errors.
+      const bool removed=(rc==0||rc==BLE_HS_ENOENT)&&ble_store_util_delete_peer(address.getBase())==0;
+      if(restart)advertising->start();
+      return removed;
+    });
+  applyIdentities();
+  if(result==ForgetResult::Done)return "";
+  Serial.printf("[Config] Pairing removal incomplete for slot %u; retry after restart if necessary\n",slot+1);
+  return "Could not finish. Retry Forget pairing; a restart also retries pending removal.";
 }
 
 bool BLEManager::saveConfig(const SlotConfig &config) { return _prefs.putBytes("config",&config,sizeof(config))==sizeof(config); }
