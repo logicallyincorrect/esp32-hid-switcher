@@ -2,7 +2,7 @@
 
 ![HID Switcher — one keyboard and mouse, three computers](docs/images/header.svg)
 
-Use one USB keyboard and mouse with up to three Bluetooth computers. Select a computer without a restart.
+Use one USB keyboard and mouse with up to three Bluetooth-enabled computers.
 
 Only the selected computer receives input. The other Bluetooth connections stay open. Names, pairings, and shortcuts stay in memory after a restart.
 
@@ -90,7 +90,7 @@ To change a shortcut:
 
 For Slot, record only modifier keys. Use those keys with 1, 2, or 3 to select a slot. Mouse shortcuts can include keyboard modifiers. Wheel and movement gestures are not supported.
 
-**Clear keyboard** and **Clear mouse** remove only the specified input type. Recording one input type keeps the other shortcut. **Restore defaults** resets all shortcuts. Each change requires confirmation. A recording expires after 60 seconds.
+**Clear keyboard** and **Clear mouse** remove only the specified input type. Recording one input type keeps the other shortcut. **Restore defaults** resets all shortcuts. Each change requires confirmation.
 
 ## Forget a pairing
 
@@ -113,7 +113,9 @@ Initial pairing does not require the menu. Use the default Slot shortcut to sele
 
 Tested hardware: Moonlander, Logitech MX Master 3S receiver, USB hub, and two Macs. Three simultaneous computers and other operating systems require more tests.
 
-The bridge supports one hub level, boot-format keyboards, and relative mice with up to eight buttons. NKRO, media keys, absolute pointers, and Logitech application access are not supported.
+Connect your keyboard and mouse directly or through one USB hub. Hubs cannot be chained together. Keyboards must support sending up to six held keys at once, plus modifier keys such as Ctrl and Shift. Mice with up to eight buttons are supported.
+
+Media keys, touchscreens, drawing tablets, and Logitech configuration apps are not supported.
 
 Menu text requires the US keyboard layout and Caps Lock off. Normal input does not have this restriction. Diagnostics do not measure total mouse-to-screen delay.
 
