@@ -121,4 +121,4 @@ python3 tests/partition-layout.py
 
 Host tests cover menu commands, output flow, shortcuts, and input routing. They do not replace tests with physical devices.
 
-See [architecture](docs/architecture.md) and [planned work](TODO.md).
+See [architecture](docs/architecture.md), [dependencies](DEPENDENCIES.md), and [planned work](TODO.md).
