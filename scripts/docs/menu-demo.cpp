@@ -57,6 +57,8 @@ struct Fixture {
   void drain(){unsigned n=0;do{tick();assert(++n<2000);}while(menu.busy());}
   void open(){menu.button(true,b.now);b.now+=3000;menu.button(true,b.now);menu.button(false,b.now);drain();assert(menu.active());}
   void raw(uint8_t key,uint8_t mods=0){uint8_t keys[6]={key};assert(menu.keyboard(keys,mods,b.now));}
+  // Echo menu selections in this documentation demo; name entry is echoed by DeviceMenu.
+  void choose(char c){b.output+=c;press(c);}
   void press(char c){const auto key=textKey(c);raw(key.code,key.modifiers);raw(0);drain();}
   void back(){raw(41);if(menu.active()){raw(0);drain();}}
   void escape(){for(unsigned i=0;menu.active();++i){assert(i<6);raw(41);if(menu.active()){raw(0);drain();}}}
@@ -67,12 +69,12 @@ int main(int argc,char **argv){
   assert(argc==2);std::filesystem::path dir(argv[1]);std::filesystem::create_directories(dir);
   auto save=[&](const char *file,const Fixture &f){std::ofstream(dir/file)<<f.b.output;};
   Fixture name;name.open();save("name-01.txt",name);
-  name.press('1');save("name-02.txt",name);
-  name.press('1');name.press('2');save("name-03.txt",name);
+  name.choose('1');save("name-02.txt",name);
+  name.choose('1');name.choose('2');save("name-03.txt",name);
   for(char c:std::string("Studio Mac"))name.press(c);
   save("name-04.txt",name);name.raw(40);name.raw(0);name.drain();save("name-05.txt",name);
-  name.press('Y');name.press('1');save("name-06.txt",name);
+  name.choose('Y');name.choose('1');save("name-06.txt",name);
   assert(name.b.names[1]=="Studio Mac");
-  name.back();save("name-07.txt",name);
-  name.back();assert(!name.menu.active());
+  name.b.output+="Esc";name.back();save("name-07.txt",name);
+  name.b.output+="Esc";name.back();assert(!name.menu.active());save("name-08.txt",name);
 }

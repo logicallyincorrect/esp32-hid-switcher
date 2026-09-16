@@ -1,30 +1,24 @@
-"""Encode captured TextEdit frames with action captions. Requires Pillow."""
+"""Encode the captured text viewport without app chrome or captions. Requires Pillow."""
 import argparse
 import json
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 
 parser = argparse.ArgumentParser()
 parser.add_argument('manifest', type=Path)
 parser.add_argument('output', type=Path)
-parser.add_argument('--font', default='/System/Library/Fonts/Supplemental/Arial.ttf')
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
-font = ImageFont.truetype(args.font, 18)
-small = ImageFont.truetype(args.font, 12)
 for kind, entries in json.loads(args.manifest.read_text()).items():
     if kind != 'name':
         continue
     frames, durations = [], []
     for entry in entries:
         image = Image.open(entry['file']).convert('RGB')
+        # Captured at 2x: omit the 32pt title bar and scrollbars.
+        image = image.crop((0, 64, image.width - 28, image.height - 30))
         image = image.resize((808, round(image.height * 808 / image.width)), Image.Resampling.LANCZOS)
-        frame = Image.new('RGB', (image.width, image.height + 76), '#10242b')
-        frame.paste(image, (0, 0))
-        draw = ImageDraw.Draw(frame)
-        draw.text((20, image.height + 13), entry['caption'], font=font, fill='#79edbe')
-        draw.text((20, image.height + 43), 'SIMULATED CONFIGURATION  /  TextEdit capture  /  Streaming menu output', font=small, fill='#b6cbce')
-        frames.append(frame.quantize(colors=128))
+        frames.append(image.quantize(colors=128))
         durations.append(entry['duration_ms'])
     durations[-1] = 4500
     path = args.output / 'configuration.gif'

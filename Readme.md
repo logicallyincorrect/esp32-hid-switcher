@@ -2,6 +2,8 @@
 
 ![HID Switcher — one keyboard and mouse, three computers](docs/images/header.svg)
 
+![Streaming device configuration in a text editor](docs/images/configuration.gif)
+
 Use one USB keyboard and mouse with up to three Bluetooth computers. Select a computer without a restart.
 
 Only the selected computer receives input. The other Bluetooth connections stay open. Names, pairings, and shortcuts stay in memory after a restart.
@@ -65,10 +67,6 @@ Enter names with printable ASCII characters. Press Enter to review a name. Press
 Press Escape to go back without saving the current input. Escape at the main menu exits setup. Press BOOT to exit from any screen. The menu also closes after two minutes without input or if its Bluetooth connection is lost. Selecting another computer closes the menu before the switch.
 
 The RGB LED is yellow in configuration mode. Normal keyboard and mouse input stops while the menu is open.
-
-![Streaming device configuration in a text editor](docs/images/configuration.gif)
-
-Simulated streaming menu output captured in TextEdit.
 
 ## Shortcuts
 

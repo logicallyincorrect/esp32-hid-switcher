@@ -23,6 +23,6 @@ The GIF shows a continuous simulated configuration session in TextEdit. `menu-de
    python3 scripts/docs/encode-gifs.py /tmp/hid-demo/manifest.json docs/images
    ```
 
-Check every frame before publication. Captions show physical actions; the menu does not echo selection keys. Menu output appends continuously at a simulated 32 ms per character. Name entry uses 100 ms per character. Captures group up to four characters per frame. These timings do not measure device latency.
+Check every frame before publication. The demonstration echoes selection keys and Esc so viewers can follow input without captions. This echo is added by the demo backend; the firmware menu does not echo those keys. The GIF crops out the editor title bar and scrollbars. Menu output appends continuously at a simulated 32 ms per character. Name entry uses 100 ms per character. Captures group up to four characters per frame. These timings do not measure device latency.
 
 `docs/images/header.svg` and `logo.svg` are editable vector artwork. The header includes the logo. No font or image download is required to display them.

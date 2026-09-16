@@ -15,7 +15,7 @@ def call(action,*args,text=None):
 state=call('get-app-state','--restore-window')
 manifest={}
 labels={
-'name':['Hold BOOT for 3 seconds','Press 1: Computers','Press 1, then 2: rename Work Mac','Type the new name','Press Enter: review the change','Press Y to save; press 1 to check','Press Esc: return to the main menu'],
+'name':['Hold BOOT for 3 seconds','Press 1: Computers','Press 1, then 2: rename Work Mac','Type the new name','Press Enter: review the change','Press Y to save; press 1 to check','Press Esc: return to the main menu','Press Esc: exit setup'],
 }
 for kind in ['name']:
  out=[]
@@ -25,9 +25,9 @@ for kind in ['name']:
   path=frames/f'{kind}-{len(out):04}.png'
   shutil.copyfile(state['screenshot']['path'],path)
   out.append({'file':str(path),'duration_ms':duration,'caption':caption})
- capture(state,3000,labels[kind][0])
+ capture(state,300,labels[kind][0])
  previous=''
- for step in range(1,8):
+ for step in range(1,9):
   text=(root/'transcripts'/f'{kind}-{step:02}.txt').read_text()
   assert text.startswith(previous), 'Demo output must append, never replace a page'
   added=text[len(previous):]
@@ -40,7 +40,6 @@ for kind in ['name']:
    capture(state,len(chunk)*(100 if chunk_size==1 else 32),labels[kind][step-1])
   out[-1]['duration_ms']+=1400
   previous=text
-  print(f'{kind}: step {step}/7, {len(out)} frames',flush=True)
- capture(state,3000,'Press Esc again: exit setup; normal input resumes')
+  print(f'{kind}: step {step}/8, {len(out)} frames',flush=True)
  manifest[kind]=out
  (root/'manifest.json').write_text(json.dumps(manifest,indent=2))
