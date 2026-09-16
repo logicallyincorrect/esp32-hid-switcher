@@ -1,53 +1,22 @@
 # ESP32-S3 USB to BLE HID Switcher
 
-Connect a USB keyboard and relative mouse to an ESP32-S3, then switch both between up to three Bluetooth computers without rebooting. It includes USB hub support, persistent simultaneous BLE connections, configuration over BLE and Wi-Fi, and diagnostics.
+Use one USB keyboard and mouse with up to three Bluetooth computers. Select a computer without a restart.
 
-## Hardware and pairing
+Only the selected computer receives input. The other Bluetooth connections stay open. Settings stay in memory after a restart.
 
-- Use an ESP32-S3 with native USB OTG. A USB-to-UART chip such as CH340 does not provide USB host support.
-- This build targets a Freenove ESP32-S3 with **16 MB flash and 8 MB PSRAM**. Adjust board memory, partition layout, and LED pins before using other hardware.
-- Connect a keyboard and mouse through a USB hub to the native USB/OTG port. A powered hub avoids relying on the development board for peripheral power. The separate UART/COM port is used for power, logs, and flashing.
-- Select slot 1 and pair **HID SWITCHER BLE** on the first computer. Select slots 2 and 3 before pairing the other computers.
+## Hardware
 
-| Shortcut | Action |
-| --- | --- |
-| Ctrl + Command + 1 / 2 / 3 | Select that slot, including an empty slot for pairing |
-| Ctrl + Command + Tab | Cycle forward through connected slots, wrapping and skipping disconnected computers |
+- Freenove ESP32-S3: 16 MB flash and 8 MB PSRAM.
+- USB keyboard and relative HID mouse.
+- USB hub, if you connect both devices.
 
-The table shows the defaults. Use `hid-switcher shortcut record cycle` (or `next`, `prev`, `slot`) or **Record** under **Switch shortcuts** in the web UI to capture keyboard or mouse-button combinations directly from the attached USB devices. Review the captured combination and save it; bindings persist across reboots. Cycle, Next, and Previous each retain keyboard and mouse bindings, so recording one preserves the other. Cycle and Next move forward through connected computers; Previous moves backward. All three skip disconnected computers and wrap around, staying on the current slot if no other computer is connected. Slot is keyboard-only: record a modifier combination, then use it with 1/2/3 to select any slot, including disconnected or empty slots. Next/Previous and mouse bindings start unset. `hid-switcher shortcuts reset` restores defaults. During recording, input pauses until the combination is captured, Escape cancels, or the session times out after 60 seconds. Mouse shortcuts can include keyboard modifiers; wheel and movement gestures are not supported.
+Connect the hub to the native USB/OTG port. Use the UART/COM port for power and firmware installation. Use a powered hub if the board cannot supply sufficient power.
 
-Either side's Control and GUI modifier is accepted; GUI is Command on macOS and the Windows/Super key on other keyboards. Release the full shortcut before repeating. With no alternative connected computer, cycling leaves the selection unchanged. Switching releases held keys and mouse buttons; a mouse button held across a switch is suppressed until released. Input for an offline selected computer is discarded.
+A CH340 USB-to-UART port cannot operate as a USB host.
 
-GPIO2 pulses the selected slot number. RGB48 uses blue/green/purple for slots 1/2/3; steady means keyboard-ready, blinking means offline/unpaired. Pins are configurable in `src/Config.h`.
+## Install the firmware
 
-## Configure over Bluetooth
-
-Wi-Fi is **off after every boot**. The macOS CLI uses an encrypted custom service alongside HID:
-
-```sh
-sh cli/build.sh
-cli/build/hid-switcher status
-cli/build/hid-switcher name 1 "Desktop"
-cli/build/hid-switcher move 1 2
-cli/build/hid-switcher ble-name "Desk Switcher"
-cli/build/hid-switcher diagnostics
-```
-
-The default Bluetooth name is **HID SWITCHER BLE**. `ble-name` accepts 1–29 UTF-8 bytes, saves the name across reboots, and updates advertising without disconnecting computers or deleting pairings. Computers may display a cached previous name. CLI discovery uses a stable service UUID rather than the name. See [installation, commands, and release packaging](cli/README.md).
-
-## Optional Wi-Fi setup
-
-Run `hid-switcher wifi on` to join saved Wi-Fi. With no saved network it opens **Moonlander Setup**, the existing recovery hotspot name. Hold **BOOT for three seconds**, or send `w` over UART at 115200 baud, to open setup manually. The generated hotspot password is printed on UART. Open **http://192.168.4.1** if the captive portal does not appear.
-
-Enter a 2.4 GHz Wi-Fi network. The hotspot has no inactivity timeout and closes ten seconds after a successful saved connection. Then open **http://moonlander.local** or the LAN IP shown in the UI. These existing network names remain unchanged when the Bluetooth name changes.
-
-The page supports Bluetooth naming, computer labels and ordering, selection, connection status, Wi-Fi settings, diagnostics, and firmware updates. Wi-Fi credentials are saved only after connecting; failed attempts retain the previous record. The home network password is not returned through the API or printed in logs.
-
-Run `hid-switcher wifi off` to close Wi-Fi. Rebooting also leaves Wi-Fi off. When enabled, unavailable saved networks cause the recovery hotspot to open after 30 seconds. There is no cloud service.
-
-## Build and flash
-
-Use PlatformIO with the pinned pioarduino platform in `platformio.ini`:
+Identify the correct board and UART port before installation. Use PlatformIO with the settings in [platformio.ini](platformio.ini).
 
 ```sh
 pio run
@@ -55,17 +24,111 @@ pio device list
 pio run -t upload --upload-port YOUR_UART_PORT
 ```
 
-Identify the board and UART port before flashing, especially with multiple ESP32 boards attached. The build uses pioarduino 55.03.311, NimBLE-Arduino 2.5.1, and ArduinoJson 7.4.2. `sdkconfig.hub.defaults` rebuilds the SDK with USB hub support and bootloader rollback. `scripts/embed_setup.py` generates the web page header from `web/index.html`.
+The first USB installation includes the bootloader and partition table. An upgrade from the original firmware can require new pairings.
 
-Initial installation requires the bootloader, partition table, OTA boot metadata, and application over USB. The two application slots are 3 MB each; this layout requires 16 MB flash. Do not apply an application-only update to a board with a different partition table. The new BLE identity/slot scheme differs from upstream's reboot-based switching; first-time upgraders may need to pair again. The one-time identity import applies to the intermediate multi-host firmware, not arbitrary older bond formats.
+## Connect computers
 
-Later web updates accept the application's `firmware.bin`, **not** the combined factory image. The updater checks chip/project identity and the complete image before selecting the inactive slot. Input pauses during installation. Invalid or interrupted uploads leave the running slot selected. Starting an upload replaces the previous backup. A trial boot has a startup health check and rollback support; that check does not prove physical keyboard/mouse functionality. Wi-Fi is off again after restart, so use the CLI to enable it before reopening the update page.
+1. Press Ctrl + Cmd + 1.
+2. Pair **HID SWITCHER BLE** in the first computer's Bluetooth settings.
+3. Press Ctrl + Cmd + 2.
+4. Pair the second computer.
+5. Repeat for slot 3, if necessary.
 
-## Tests
+Cmd means Command on macOS or Windows/Super on other keyboards. Left and right modifier keys have the same function.
+
+GPIO2 flashes the slot number. The RGB LED shows blue/green/purple for slots 1/2/3. A steady light means ready; a flashing light means disconnected.
+
+## Switch shortcuts
+
+| Action | Function | Default shortcut | Input device |
+| --- | --- | --- | --- |
+| Cycle | Select the next connected computer | Ctrl + Cmd + Tab | Keyboard, mouse, or both |
+| Next | Select the next connected computer | None | Keyboard, mouse, or both |
+| Previous | Select the previous connected computer | None | Keyboard, mouse, or both |
+| Slot | Select any slot, including an empty or disconnected slot | Ctrl + Cmd + 1/2/3 | Keyboard only |
+
+Cycle, Next, and Previous skip disconnected computers and repeat through the slot list. With no other connected computer, selection stays unchanged.
+
+### Set a shortcut
+
+Run the command below. Use `next`, `prev`, or `slot` instead of `cycle` for another action.
+
+```sh
+hid-switcher shortcut record cycle
+```
+
+1. Press and release the combination on the USB keyboard or mouse connected to the bridge.
+2. Check the captured combination.
+3. Enter `y` to save it.
+
+For Slot, record only the modifier keys. Use these keys with 1, 2, or 3 to select a slot.
+
+Mouse shortcuts can include keyboard modifiers. Mouse wheel and movement gestures are not supported.
+
+Input stops during capture. Press Escape to cancel. The session expires after 60 seconds. The web page has the same controls.
+
+### Remove a shortcut
+
+```sh
+hid-switcher shortcut clear cycle mouse
+hid-switcher shortcut clear cycle keyboard
+hid-switcher shortcuts
+hid-switcher shortcuts reset
+```
+
+Each `clear` command removes only the specified input type. The web page has **Clear keyboard** and **Clear mouse** buttons. `reset` restores all default shortcuts.
+
+## Configure the bridge
+
+Use the macOS CLI over encrypted Bluetooth. See [CLI installation and commands](cli/README.md) for release downloads and build instructions.
+
+```sh
+hid-switcher status
+hid-switcher name 1 "Desktop"
+hid-switcher move 1 2
+hid-switcher ble-name "Desk Switcher"
+hid-switcher diagnostics
+```
+
+Name and position changes keep existing pairings. Computers can continue to show the previous Bluetooth name.
+
+### Use the web page
+
+Wi-Fi is off after each restart.
+
+```sh
+hid-switcher wifi on
+hid-switcher wifi off
+```
+
+`wifi on` connects to saved Wi-Fi or opens **Moonlander Setup**. If saved Wi-Fi is unavailable, setup opens after 30 seconds.
+
+For manual recovery, hold BOOT for three seconds. Read the hotspot password through UART at 115200 baud.
+
+1. Connect to **Moonlander Setup**.
+2. Open **http://192.168.4.1**.
+3. Enter your 2.4 GHz Wi-Fi settings.
+4. After connection, open **http://moonlander.local** on your normal network.
+
+The hotspot closes ten seconds after Wi-Fi connects. The page provides computer settings, shortcuts, diagnostics, and firmware updates.
+
+### Update the firmware
+
+Use the web page to upload `.pio/build/esp32s3_usb_ble/firmware.bin`. Do not upload `firmware.factory.bin` or use this method with a different partition table.
+
+Input stops during installation. An upload replaces the previous backup. A failed trial boot returns to the previous firmware. Wi-Fi is off after the restart.
+
+## Limits and tests
+
+Tested hardware: Moonlander, Logitech MX Master 3S receiver, USB hub, and two Macs. Three simultaneous computers and other operating systems require more tests.
+
+The bridge supports one hub level, boot-format keyboards, and relative mice with up to eight buttons. NKRO, media keys, absolute pointers, and Logitech application access are not supported.
+
+The tested Macs use 15 ms Bluetooth intervals. Diagnostics do not measure total mouse-to-screen delay.
 
 ```sh
 sh scripts/test-host.sh
-python3 tests/partition-layout.py  # after pio run
+python3 tests/partition-layout.py
 npm ci --prefix tests
 npx --prefix tests playwright install chromium
 npm test --prefix tests
@@ -73,16 +136,6 @@ sh cli/build.sh
 sh cli/test.sh
 ```
 
-Host tests cover shortcut validation, connected-slot cycling, name validation, HID parsing, routing and releases, slot ordering, report timing, controller accounting, and bounded recovery. The USB endpoint regression exercises the vendored driver lookup with colliding endpoint addresses. Browser tests use mocked API responses and cover form validation, safe rendering, and a 375px layout. They do not replace physical-device tests.
+Run the partition check after a firmware build. Browser tests use simulated API responses. Software tests do not replace tests with physical devices.
 
-Validated hardware includes a Moonlander keyboard and Logitech MX Master 3S receiver through a USB hub, with two Macs connected simultaneously. Support for three links exists in firmware; other host operating systems and three-host physical behavior need broader testing. The USB driver retains its upstream license and documents the local fix in [LOCAL-CHANGES.md](lib/ESP32_USB_Host_HID/LOCAL-CHANGES.md).
-
-## Scope and diagnostics
-
-Supports one hub level, boot-format keyboards, and relative HID mice with up to eight buttons, 8/16-bit X/Y, wheel, and horizontal pan. ESP32-S3 USB host channel limits can leave unused composite/vendor interfaces unavailable. NKRO, media-key forwarding, absolute pointers, vendor mouse configuration, and Logitech application passthrough are not implemented.
-
-Mouse motion is coalesced to the negotiated BLE interval while preserving button transitions. With the tested Macs this is 15 ms, approximately 66.7 submissions/s. Increasing production above the Bluetooth link's capacity can increase buffering. This is not the mouse's sensor polling rate.
-
-The UI separates USB arrivals, BLE submissions, queue wait, and the age of coalesced movement. Fixed-size counters report mean/max, variation, and histogram p95 bounds. Spacing excludes gaps over 100 ms and reports how many were excluded. Wait statistics include long gaps. All aggregate since restart and across decoded mouse sources.
-
-Controller completion instrumentation measures return of HCI packet credits, which includes controller reporting delay; it is not exact radio delivery or mouse-to-screen latency. Wi-Fi and Bluetooth share radio resources, so Wi-Fi is optional and disabled during normal use. See [TODO.md](TODO.md) for remaining features.
+See [planned work](TODO.md), the [USB driver change](lib/ESP32_USB_Host_HID/LOCAL-CHANGES.md).
