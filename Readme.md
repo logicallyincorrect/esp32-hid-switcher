@@ -1,5 +1,7 @@
 # HID Switcher
 
+![HID Switcher — one keyboard and mouse, three computers](docs/images/header.svg)
+
 Use one USB keyboard and mouse with up to three Bluetooth computers. Select a computer without a restart.
 
 Only the selected computer receives input. The other Bluetooth connections stay open. Names, pairings, and shortcuts stay in memory after a restart.
@@ -64,6 +66,12 @@ Press Escape to go back without saving the current input. Escape at the main men
 
 The RGB LED is yellow in configuration mode. Normal keyboard and mouse input stops while the menu is open.
 
+**Rename a computer**
+
+![Rename a computer through the device text menu](docs/images/rename-computer.gif)
+
+Simulated menu output captured in TextEdit. Playback is accelerated.
+
 ## Shortcuts
 
 | Action | Function | Default | Input device |
@@ -87,6 +95,12 @@ To change a shortcut:
 For Slot, record only modifier keys. Use those keys with 1, 2, or 3 to select a slot. Mouse shortcuts can include keyboard modifiers. Wheel and movement gestures are not supported.
 
 **Clear keyboard** and **Clear mouse** remove only the specified input type. Recording one input type keeps the other shortcut. **Restore defaults** resets all shortcuts. Each change requires confirmation. A recording expires after 60 seconds.
+
+**Record a mouse shortcut**
+
+![Record mouse button 4 as a Cycle shortcut and confirm the assignment](docs/images/record-mouse-shortcut.gif)
+
+Simulated menu output captured in TextEdit. Playback is accelerated.
 
 ## Forget a pairing
 
