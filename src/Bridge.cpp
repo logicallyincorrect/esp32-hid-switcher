@@ -2,7 +2,9 @@
 #include "DeviceShortcut.h"
 #include <hid_usage_keyboard.h>
 #include <esp32-hal-rgb-led.h>
-#include "SetupServer.h"
+#include "DeviceMenu.h"
+#include "MenuBackend.h"
+#include "BootHealth.h"
 #include <esp_log.h>
 #include "RuntimeHealth.h"
 
@@ -20,6 +22,7 @@ struct Report { bool mouse=false; uint8_t bytes[8]={}; MouseReport movement; uin
 
 void Bridge::begin() {
   startRuntimeWatchdog();
+  pinMode(0,INPUT_PULLUP);
   // Per-report stack logging adds latency. Keep debug code available in the
   // SDK, but only emit warnings/errors during normal keyboard/mouse use.
   esp_log_level_set("*",ESP_LOG_WARN);
@@ -40,18 +43,21 @@ void Bridge::begin() {
 void Bridge::loop() {
   feedRuntimeWatchdog();
   if(USBManager::service()){_bleManager.releaseAll();xQueueReset(reports);shortcutHeld=keyboardHeld;mouseBlocked=mouseButtonsHeld!=0;}
-  static uint32_t previousLoop=0,maxLoopGap=0,maxSetup=0;
+  static uint32_t previousLoop=0,maxLoopGap=0,maxMenu=0;
   const uint32_t loopStart=micros();
   if(previousLoop && loopStart-previousLoop>maxLoopGap)maxLoopGap=loopStart-previousLoop;
   previousLoop=loopStart;
 
-  static SetupServer setup(_bleManager);
-  static bool setupStarted=false;
-  if(!setupStarted){setup.begin();setupStarted=true;}
+  static MenuBackend backend(_bleManager);
+  static DeviceMenu<MenuBackend> menu(backend);
   _bleManager.loop();
-  const uint32_t setupStart=micros();
-  setup.loop();
-  const uint32_t setupTime=micros()-setupStart;if(setupTime>maxSetup)maxSetup=setupTime;
+  serviceBootHealth(USBManager::healthy());
+  const bool wasMenu=menu.active();
+  menu.button(digitalRead(0)==LOW,millis());
+  const uint32_t menuStart=micros();
+  menu.tick(millis());
+  const uint32_t menuTime=micros()-menuStart;if(menuTime>maxMenu)maxMenu=menuTime;
+  if(wasMenu!=menu.active()){shortcutHeld=keyboardHeld;mouseBlocked=mouseButtonsHeld!=0;}
   static uint32_t inputEpoch=0;
   if(inputEpoch!=_bleManager.inputEpoch()){
     inputEpoch=_bleManager.inputEpoch();xQueueReset(reports);
@@ -66,7 +72,7 @@ void Bridge::loop() {
   if (LED_FEEDBACK_PIN >= 0)
     digitalWrite(LED_FEEDBACK_PIN, phase < (_currentSlot + 1) * 300 && phase % 300 < 120);
   const bool lit = _bleManager.isConnected() || (millis() % 1000 < 350);
-  const uint32_t color = lit ? (_currentSlot == 0 ? 0x000018 : (_currentSlot == 1 ? 0x001800 : 0x140014)) : 0;
+  const uint32_t color = menu.active()?0x101000:lit ? (_currentSlot == 0 ? 0x000018 : (_currentSlot == 1 ? 0x001800 : 0x140014)) : 0;
   static uint32_t previousColor = 0xffffffff;
   if (LED_RGB_PIN >= 0 && color != previousColor) {
     rgbLedWrite(LED_RGB_PIN, (color >> 16) & 255, (color >> 8) & 255, color & 255);
@@ -75,10 +81,9 @@ void Bridge::loop() {
   while (Serial.available()) {
     const char command = Serial.read();
     if (command >= '1' && command <= '3') {
-      shortcutHeld = keyboardHeld;
+      menu.cancel();shortcutHeld = keyboardHeld;
       switchToSlot(command - '1');
-    } else if(command=='w')setup.toggle();
-    else if(command=='v')setup.radioComparison();
+    }
     else if(command=='u')USBManager::requestRecovery();
     else if (command == '?') {
       _bleManager.printStatus();
@@ -87,7 +92,7 @@ void Bridge::loop() {
   }
   portENTER_CRITICAL(&reportMux); bool overflow = reportOverflow; reportOverflow = false; portEXIT_CRITICAL(&reportMux);
   if (overflow) {
-    xQueueReset(reports);
+    menu.cancel();xQueueReset(reports);
     _bleManager.releaseAll();
     shortcutHeld = keyboardHeld;mouseBlocked=true;
     Serial.println("[USB] Input queue overflow; released keys, waiting for physical release");
@@ -96,7 +101,7 @@ void Bridge::loop() {
   while (xQueueReceive(reports, &report, 0) == pdTRUE) {
     if(report.mouse) {
       mouseButtonsHeld=report.movement.buttons;
-      if(_bleManager.captureMouse(mouseButtonsHeld)){
+      if(menu.mouse(mouseButtonsHeld,millis())){
         shortcutHeld=keyboardHeld;mouseBlocked=mouseButtonsHeld!=0;continue;
       }
       if(!mouseBlocked&&checkDeviceSwitchCombo(keyboardKeys,keyboardModifiers,true)){
@@ -109,7 +114,7 @@ void Bridge::loop() {
     for (int i = 2; i < 8; ++i) released &= report.bytes[i] == 0;
     keyboardHeld=!released;
     keyboardModifiers=report.bytes[0];memcpy(keyboardKeys,report.bytes+2,6);
-    if(_bleManager.captureKeyboard(keyboardKeys,keyboardModifiers)){
+    if(menu.keyboard(keyboardKeys,keyboardModifiers,millis())){
       shortcutHeld=keyboardHeld;mouseBlocked=mouseButtonsHeld!=0;continue;
     }
     if (shortcutHeld) {
@@ -128,8 +133,8 @@ void Bridge::loop() {
   static uint32_t lastStatus = 0;
   if (millis() - lastStatus >= 5000) {
     lastStatus = millis(); _bleManager.printStatus();
-    Serial.printf("[Loop timing] max_gap_us=%lu max_web_us=%lu\n",(unsigned long)maxLoopGap,(unsigned long)maxSetup);
-    maxLoopGap=maxSetup=0;
+    Serial.printf("[Loop timing] max_gap_us=%lu max_menu_us=%lu\n",(unsigned long)maxLoopGap,(unsigned long)maxMenu);
+    maxLoopGap=maxMenu=0;
   }
 }
 

@@ -2,7 +2,7 @@
 
 Use one USB keyboard and mouse with up to three Bluetooth computers. Select a computer without a restart.
 
-Only the selected computer receives input. The other Bluetooth connections stay open. Settings stay in memory after a restart.
+Only the selected computer receives input. The other Bluetooth connections stay open. Names, pairings, and shortcuts stay in memory after a restart.
 
 ## Hardware
 
@@ -14,9 +14,9 @@ Connect the hub to the native USB/OTG port. Use the UART/COM port for power and 
 
 A CH340 USB-to-UART port cannot operate as a USB host.
 
-## Install the firmware
+## Install or update
 
-Identify the correct board and UART port before installation. Use PlatformIO with the settings in [platformio.ini](platformio.ini).
+Identify the correct board and UART port before installation. Use PlatformIO with [platformio.ini](platformio.ini).
 
 ```sh
 pio run
@@ -24,7 +24,7 @@ pio device list
 pio run -t upload --upload-port YOUR_UART_PORT
 ```
 
-The first USB installation includes the bootloader and partition table. An upgrade from the original firmware can require new pairings.
+All firmware updates use USB. There is no Wi-Fi, web page, or configuration application. The existing partition layout remains compatible with saved settings. Do not erase flash unless you want to remove pairings and settings.
 
 ## Connect computers
 
@@ -36,87 +36,63 @@ The first USB installation includes the bootloader and partition table. An upgra
 
 Cmd means Command on macOS or Windows/Super on other keyboards. Left and right modifier keys have the same function.
 
-GPIO2 flashes the slot number. The RGB LED shows blue/green/purple for slots 1/2/3. A steady light means ready; a flashing light means disconnected.
+## Configure the device
 
-## Switch shortcuts
+1. Open a blank document in a text editor on the selected computer.
+2. Select the US keyboard layout on that computer.
+3. Set Caps Lock to off.
+4. Hold BOOT for three seconds.
+5. Wait for the menu and its `>` prompt.
+6. Press a menu number.
 
-| Action | Function | Default shortcut | Input device |
+The device types the menu into the document. It reads configuration input directly from the attached USB keyboard and mouse. No software installation is necessary.
+
+Use a text editor, not a command shell. Keep the document selected until you exit. The device cannot detect which application receives its text.
+
+| Menu | Function |
+| --- | --- |
+| Computers | Rename, move, or select a computer |
+| Shortcuts | Record, clear, or restore shortcuts |
+| Bluetooth name | Change the device name |
+| Diagnostics | Show USB status, Bluetooth errors, and report times |
+
+Each configuration menu shows the current settings. Unassigned shortcuts show **Not set**.
+
+Enter names with printable ASCII characters. Press Enter to review a name. Press `y` to save or `n` to cancel. Uppercase `Y` and `N` also work.
+
+Press Escape to go back without saving the current input. Escape at the main menu exits setup. Press BOOT to exit from any screen. The menu also closes after two minutes without input or if its Bluetooth connection is lost. Selecting another computer closes the menu before the switch.
+
+The RGB LED is yellow in configuration mode. Normal keyboard and mouse input stops while the menu is open.
+
+## Shortcuts
+
+| Action | Function | Default | Input device |
 | --- | --- | --- | --- |
-| Cycle | Select the next connected computer | Ctrl + Cmd + Tab | Keyboard, mouse, or both |
-| Next | Select the next connected computer | None | Keyboard, mouse, or both |
-| Previous | Select the previous connected computer | None | Keyboard, mouse, or both |
-| Slot | Select any slot, including an empty or disconnected slot | Ctrl + Cmd + 1/2/3 | Keyboard only |
+| Cycle | Next connected computer | Ctrl + Cmd + Tab | Keyboard, mouse, or both |
+| Next | Next connected computer | None | Keyboard, mouse, or both |
+| Previous | Previous connected computer | None | Keyboard, mouse, or both |
+| Slot | Any slot, including disconnected slots | Ctrl + Cmd + 1/2/3 | Keyboard only |
 
 Cycle, Next, and Previous skip disconnected computers and repeat through the slot list. With no other connected computer, selection stays unchanged.
 
-### Set a shortcut
+To change a shortcut:
 
-Run the command below. Use `next`, `prev`, or `slot` instead of `cycle` for another action.
+1. Select **Shortcuts** from the menu.
+2. Select the action.
+3. Select **Record**.
+4. Wait for the prompt.
+5. Press and release the combination on the attached USB keyboard or mouse.
+6. Press `y` to save after the confirmation prompt.
 
-```sh
-hid-switcher shortcut record cycle
-```
+For Slot, record only modifier keys. Use those keys with 1, 2, or 3 to select a slot. Mouse shortcuts can include keyboard modifiers. Wheel and movement gestures are not supported.
 
-1. Press and release the combination on the USB keyboard or mouse connected to the bridge.
-2. Check the captured combination.
-3. Enter `y` to save it.
+**Clear keyboard** and **Clear mouse** remove only the specified input type. Recording one input type keeps the other shortcut. **Restore defaults** resets all shortcuts. Each change requires confirmation. A recording expires after 60 seconds.
 
-For Slot, record only the modifier keys. Use these keys with 1, 2, or 3 to select a slot.
+## Status and recovery
 
-Mouse shortcuts can include keyboard modifiers. Mouse wheel and movement gestures are not supported.
+GPIO2 flashes the selected slot number. The RGB LED shows blue/green/purple for slots 1/2/3. A steady light means ready; a flashing light means disconnected.
 
-Input stops during capture. Press Escape to cancel. The session expires after 60 seconds. The web page has the same controls.
-
-### Remove a shortcut
-
-```sh
-hid-switcher shortcut clear cycle mouse
-hid-switcher shortcut clear cycle keyboard
-hid-switcher shortcuts
-hid-switcher shortcuts reset
-```
-
-Each `clear` command removes only the specified input type. The web page has **Clear keyboard** and **Clear mouse** buttons. `reset` restores all default shortcuts.
-
-## Configure the bridge
-
-Use the macOS CLI over encrypted Bluetooth. See [CLI installation and commands](cli/README.md) for release downloads and build instructions.
-
-```sh
-hid-switcher status
-hid-switcher name 1 "Desktop"
-hid-switcher move 1 2
-hid-switcher ble-name "Desk Switcher"
-hid-switcher diagnostics
-```
-
-Name and position changes keep existing pairings. Computers can continue to show the previous Bluetooth name.
-
-### Use the web page
-
-Wi-Fi is off after each restart.
-
-```sh
-hid-switcher wifi on
-hid-switcher wifi off
-```
-
-`wifi on` connects to saved Wi-Fi or opens **Moonlander Setup**. If saved Wi-Fi is unavailable, setup opens after 30 seconds.
-
-For manual recovery, hold BOOT for three seconds. Read the hotspot password through UART at 115200 baud.
-
-1. Connect to **Moonlander Setup**.
-2. Open **http://192.168.4.1**.
-3. Enter your 2.4 GHz Wi-Fi settings.
-4. After connection, open **http://moonlander.local** on your normal network.
-
-The hotspot closes ten seconds after Wi-Fi connects. The page provides computer settings, shortcuts, diagnostics, and firmware updates.
-
-### Update the firmware
-
-Use the web page to upload `.pio/build/esp32s3_usb_ble/firmware.bin`. Do not upload `firmware.factory.bin` or use this method with a different partition table.
-
-Input stops during installation. An upload replaces the previous backup. A failed trial boot returns to the previous firmware. Wi-Fi is off after the restart.
+Initial pairing does not require the menu. Use the default Slot shortcut to select an empty slot. If Bluetooth is unavailable, use UART at 115200 baud: `1`/`2`/`3` selects a slot, `?` shows status, and `u` restarts USB devices.
 
 ## Limits and tests
 
@@ -124,18 +100,14 @@ Tested hardware: Moonlander, Logitech MX Master 3S receiver, USB hub, and two Ma
 
 The bridge supports one hub level, boot-format keyboards, and relative mice with up to eight buttons. NKRO, media keys, absolute pointers, and Logitech application access are not supported.
 
-The tested Macs use 15 ms Bluetooth intervals. Diagnostics do not measure total mouse-to-screen delay.
+Menu text requires the US keyboard layout and Caps Lock off. Normal input does not have this restriction. Diagnostics do not measure total mouse-to-screen delay.
 
 ```sh
 sh scripts/test-host.sh
+pio run
 python3 tests/partition-layout.py
-npm ci --prefix tests
-npx --prefix tests playwright install chromium
-npm test --prefix tests
-sh cli/build.sh
-sh cli/test.sh
 ```
 
-Run the partition check after a firmware build. Browser tests use simulated API responses. Software tests do not replace tests with physical devices.
+Host tests cover menu commands, output flow, shortcuts, and input routing. They do not replace tests with physical devices.
 
 See [planned work](TODO.md), the [USB driver change](lib/ESP32_USB_Host_HID/LOCAL-CHANGES.md).

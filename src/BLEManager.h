@@ -21,8 +21,6 @@ public:
   void begin(uint8_t slot);
   void loop();
   void flushInput();
-  void setWiFiControl(bool (*fn)(void *,bool),void *context){_wifiControl=fn;_wifiContext=context;}
-  void setWiFiState(bool enabled,bool connected){_wifiEnabled=enabled;_wifiConnected=connected;}
 
   const String &deviceName() const { return _deviceName; }
   bool setDeviceName(const String &name);
@@ -32,10 +30,15 @@ public:
   bool captureMouse(uint8_t buttons){return _shortcutRecorder.mouse(buttons);}
   int shortcutAction(const uint8_t *keys,uint8_t modifiers,uint8_t buttons,uint8_t kind=0)const{return matchingShortcut(_shortcuts,keys,modifiers,buttons,kind);}
   void selectSlot(uint8_t slot);
+  uint32_t menuSession()const{return _connectionRevision;}
+  uint32_t menuReportSpacing()const{return (mouseIntervalUs()+999)/1000;}
+  bool sendMenuReport(const uint8_t *report){return _router.tryKeyboard(report);}
+  int recordState()const{return int(_shortcutRecorder.state);}
+  String recordedLabel()const;
+  String bindingLabel(unsigned action,unsigned kind)const;
   bool isConnected() { return _router.connected(_router.selected()); }
   void printStatus();
   void appendStatus(JsonObject out);
-  void setMaintenance(bool value){if(value!=_maintenance){++_inputEpoch;if(value)releaseAll();}_maintenance=value;}
   uint32_t inputEpoch()const{return _inputEpoch;}
   void sendKeyboardReport(const uint8_t *keys, uint8_t modifiers);
   void sendMouseReport(const MouseReport &report,uint32_t received);
@@ -79,7 +82,7 @@ private:
   uint32_t mouseIntervalUs() const;
   void tuneInterval();
   uint32_t _keyboardIn=0,_mouseIn=0,_tx[2]={},_txFailed=0;
-  bool _maintenance=false;
+  uint32_t _connectionRevision=0;
   uint32_t _inputEpoch=0;
   uint32_t _failedSince=0,_recoveries=0,_totalTxFailed=0;
   Peer _peers[3];
@@ -100,16 +103,6 @@ private:
   NimBLEHIDDevice *_hid = nullptr;
   NimBLECharacteristic *_input = nullptr;
   NimBLECharacteristic *_mouse = nullptr;
-  NimBLECharacteristic *_configStatus = nullptr,*_configCommand=nullptr,*_configReply=nullptr;
-  struct ConfigRequest {uint16_t handle;ble_addr_t identity;char text[192];};
-  QueueHandle_t _configRequests=nullptr;
-  bool (*_wifiControl)(void *,bool)=nullptr;void *_wifiContext=nullptr;
-  bool _wifiEnabled=false,_wifiConnected=false;
-  void processConfigCommand();
-  void onWrite(NimBLECharacteristic *,NimBLEConnInfo &) override;
-
-  uint32_t _lastConfigStatus=0;
-  void updateConfigStatus();
   MultiHostRouter _router;
   uint32_t _lastAdvertise = 0;
   void enqueue(Kind kind, const NimBLEConnInfo &info, uint16_t sub = 0, uint8_t reportId=1);
