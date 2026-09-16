@@ -2,8 +2,6 @@
 
 ![HID Switcher — one keyboard and mouse, three computers](docs/images/header.svg)
 
-![Streaming device configuration in a text editor](docs/images/configuration.gif)
-
 Use one USB keyboard and mouse with up to three Bluetooth computers. Select a computer without a restart.
 
 Only the selected computer receives input. The other Bluetooth connections stay open. Names, pairings, and shortcuts stay in memory after a restart.
@@ -41,6 +39,8 @@ All firmware updates use USB. There is no Wi-Fi, web page, or configuration appl
 Cmd means Command on macOS or Windows/Super on other keyboards. Left and right modifier keys have the same function.
 
 ## Configure the device
+
+![Streaming device configuration in a text editor](docs/images/configuration.gif)
 
 1. Open a blank document in a text editor on the selected computer.
 2. Select the US keyboard layout on that computer.
