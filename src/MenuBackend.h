@@ -1,11 +1,12 @@
 #pragma once
-#include "BLEManager.h"
-#include "USBManager.h"
+#include "BleHid.h"
+#include "UsbHost.h"
 #include <esp_app_desc.h>
 #include <string>
 
 class MenuBackend {
-  BLEManager &_ble;
+  BleHid &_ble;
+  UsbHost &_usb;
   String _token;
   bool command(const char *op,unsigned action=0,unsigned kind=0){
     JsonDocument request,result;String error;
@@ -13,7 +14,7 @@ class MenuBackend {
     return _ble.shortcutCommand(request.as<JsonVariantConst>(),result.to<JsonObject>(),error);
   }
 public:
-  explicit MenuBackend(BLEManager &ble):_ble(ble){}
+  MenuBackend(BleHid &ble, UsbHost &usb):_ble(ble),_usb(usb){}
   bool connected(){return _ble.isConnected();}
   unsigned selected(){return _ble.selected();}
   uint32_t session(){return _ble.menuSession();}
@@ -81,7 +82,7 @@ public:
     JsonDocument doc;_ble.appendStatus(doc.to<JsonObject>());
     char text[384];snprintf(text,sizeof(text),
       "Firmware: %.32s\nUSB: %s\nBLE errors: %lu  Recoveries: %lu\nMouse interval: %.2f ms\nUSB spacing: %.2f ms  BLE spacing: %.2f ms\nQueue wait: %.2f ms\nThese times are not mouse-to-screen latency.",
-      esp_app_get_description()->version,USBManager::healthy()?"ready":"not ready",
+      esp_app_get_description()->version,_usb.healthy()?"ready":"not ready",
       (unsigned long)(doc["send_errors"]|0UL),(unsigned long)(doc["recoveries"]|0UL),
       doc["traffic"]["merge_threshold_ms"].as<double>(),doc["mouse_timing"]["arrival_spacing"]["mean_ms"].as<double>(),
       doc["mouse_timing"]["submission_spacing"]["mean_ms"].as<double>(),doc["mouse_timing"]["bridge_queue_wait"]["mean_ms"].as<double>());

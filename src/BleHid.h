@@ -15,9 +15,11 @@
 #include "ShortcutBindings.h"
 #include "ReconnectGuard.h"
 
-class BLEManager : public NimBLEServerCallbacks, public NimBLECharacteristicCallbacks {
+class BleHid : public NimBLEServerCallbacks, public NimBLECharacteristicCallbacks {
 public:
-  BLEManager() : _router(notifyOne, this) {}
+  BleHid() : _router(notifyOne, this) {}
+  BleHid(const BleHid &) = delete;
+  BleHid &operator=(const BleHid &) = delete;
   void begin(uint8_t slot);
   void loop();
   void flushInput();

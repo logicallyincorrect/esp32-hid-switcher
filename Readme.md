@@ -1,4 +1,4 @@
-# ESP32-S3 USB to BLE HID Switcher
+# HID Switcher
 
 Use one USB keyboard and mouse with up to three Bluetooth computers. Select a computer without a restart.
 
@@ -95,7 +95,7 @@ For Slot, record only modifier keys. Use those keys with 1, 2, or 3 to select a 
 3. Check the displayed name.
 4. Press `y` or `Y` to confirm.
 
-The bridge disconnects that computer and clears its pairing. The slot name, shortcuts, and other pairings stay saved. If you forget the current computer, setup closes when it disconnects. Press ESC or `n` to cancel before removal.
+The bridge disconnects that computer and clears its pairing. The slot name, shortcuts, and other pairings stay saved. If you forget the current computer, setup closes when it disconnects. Press Esc or `n` to cancel before removal.
 
 Also forget HID SWITCHER BLE in that computer's Bluetooth settings before pairing again. Select the empty slot to pair a replacement computer.
 
@@ -121,4 +121,4 @@ python3 tests/partition-layout.py
 
 Host tests cover menu commands, output flow, shortcuts, and input routing. They do not replace tests with physical devices.
 
-See [planned work](TODO.md), the [USB driver change](lib/ESP32_USB_Host_HID/LOCAL-CHANGES.md).
+See [architecture](docs/architecture.md) and [planned work](TODO.md).

@@ -1,5 +1,5 @@
-#include "BLEManager.h"
-#include "Config.h"
+#include "BleHid.h"
+#include "Board.h"
 #include "ForgetPairing.h"
 #include <nimble/nimble/host/include/host/ble_store.h>
 #include "ControllerDiagnostics.h"
@@ -29,7 +29,7 @@ static uint8_t reportMap[] = {
   0x05,0x0c,0x0a,0x38,0x02,0x95,0x01,0x81,0x06,0xc0,0xc0
 };
 
-void BLEManager::begin(uint8_t slot) {
+void BleHid::begin(uint8_t slot) {
   _events = xQueueCreate(32, sizeof(Event));
   assert(_events);
   if(!_prefs.begin("multi-host",false)){Serial.println("[Config] Cannot open persistent settings");abort();}
@@ -57,8 +57,8 @@ void BLEManager::begin(uint8_t slot) {
   }
   applyIdentities();
   _router.select(_config.selected);
-  _deviceName=_prefs.getString("ble-name",DEVICE_NAME);
-  if(!validDeviceName(_deviceName.c_str(),_deviceName.length()))_deviceName=DEVICE_NAME;
+  _deviceName=_prefs.getString("ble-name",Board::defaultName);
+  if(!validDeviceName(_deviceName.c_str(),_deviceName.length()))_deviceName=Board::defaultName;
   NimBLEDevice::init(_deviceName.c_str());
   for(unsigned i=0;i<3;++i)if(_config.slots[i].assigned==2)forgetComputer(i);
   Serial.printf("[BLE diagnostic] restored bonds=%u\n",NimBLEDevice::getNumBonds());
@@ -69,7 +69,7 @@ void BLEManager::begin(uint8_t slot) {
   _server->setCallbacks(this, false);
   _server->advertiseOnDisconnect(false);
   _hid = new NimBLEHIDDevice(_server);
-  _hid->setManufacturer(DEVICE_MANUFACTURER);
+  _hid->setManufacturer(Board::manufacturer);
   _hid->setPnp(0x02, 0x303a, 0x0001, 0x0100);
   _hid->setHidInfo(0, 1);
   _hid->setReportMap(reportMap, sizeof(reportMap));
@@ -104,7 +104,7 @@ void BLEManager::begin(uint8_t slot) {
   printStatus();
 }
 
-void BLEManager::enqueue(Kind kind, const NimBLEConnInfo &info, uint16_t sub, uint8_t reportId) {
+void BleHid::enqueue(Kind kind, const NimBLEConnInfo &info, uint16_t sub, uint8_t reportId) {
   Event event{kind, info.getConnHandle(), *info.getIdAddress().getBase(),
               info.isEncrypted(), info.isBonded(), sub, reportId};
   if (xQueueSend(_events, &event, 0) != pdTRUE) {
@@ -112,21 +112,21 @@ void BLEManager::enqueue(Kind kind, const NimBLEConnInfo &info, uint16_t sub, ui
   }
 }
 
-BLEManager::Peer *BLEManager::peer(uint16_t handle) {
+BleHid::Peer *BleHid::peer(uint16_t handle) {
   for (auto &p : _peers) if (p.handle == handle) return &p;
   return nullptr;
 }
-int BLEManager::knownSlot(const ble_addr_t &identity) {
+int BleHid::knownSlot(const ble_addr_t &identity) {
   for (int i = 0; i < 3; ++i)
     if (_config.slots[i].assigned==1 && _identities[i].type == identity.type &&
         memcmp(_identities[i].val, identity.val, 6) == 0) return i;
   return -1;
 }
-void BLEManager::updateReady(Peer &p) {
+void BleHid::updateReady(Peer &p) {
   if (p.slot >= 0) _router.ready(p.slot, p.encrypted, p.subscribed);
 }
 
-void BLEManager::handle(const Event &e) {
+void BleHid::handle(const Event &e) {
   if((e.kind==TimingUpdated||e.kind==Disconnected)&&e.handle==_intervalProbeHandle)_intervalProbeComplete=true;
   if(e.kind==Connected||e.kind==Disconnected)_linksSettledSince=0;
   if (e.kind == Disconnected) {
@@ -194,7 +194,7 @@ void BLEManager::handle(const Event &e) {
 }
 
 
-void BLEManager::loop() {
+void BleHid::loop() {
   _shortcutRecorder.tick(millis());
 
   portENTER_CRITICAL(&_eventMux); bool overflow = _eventOverflow; _eventOverflow = false; portEXIT_CRITICAL(&_eventMux);
@@ -266,7 +266,7 @@ void BLEManager::loop() {
   }
 }
 
-void BLEManager::flushInput(){
+void BleHid::flushInput(){
   for(unsigned i=0;i<4 && _pendingKeyboard.peek();++i){
     if(!_router.tryKeyboard(_pendingKeyboard.peek()))break;
     _pendingKeyboard.accepted();
@@ -288,7 +288,7 @@ void BLEManager::flushInput(){
   }
 }
 
-uint32_t BLEManager::mouseIntervalUs() const {
+uint32_t BleHid::mouseIntervalUs() const {
   for(const auto &p:_peers)if(p.slot==int(selected())&&p.handle!=MultiHostRouter::NONE){
     ble_gap_conn_desc live;
     if(ble_gap_conn_find(p.handle,&live)==0 && live.conn_itvl>=6)return live.conn_itvl*1250u;
@@ -296,7 +296,7 @@ uint32_t BLEManager::mouseIntervalUs() const {
   return 15000;
 }
 
-void BLEManager::tuneInterval(){
+void BleHid::tuneInterval(){
   if(_intervalTuningDisabled)return;
   const uint32_t now=millis();
   // Serialize requests and retain the persistent crash guard while a procedure
@@ -330,7 +330,7 @@ void BLEManager::tuneInterval(){
       ble_l2cap_sig_update_params request{9,9,0,400};
       rc=ble_l2cap_sig_update(p.handle,&request,[](uint16_t handle,int status,void *context){
         if(status==0)return; // Wait for the actual connection-update event.
-        auto self=static_cast<BLEManager *>(context);
+        auto self=static_cast<BleHid *>(context);
         Event event{TimingUpdated,handle,{},false,false,0,1};
         if(xQueueSend(self->_events,&event,0)!=pdTRUE){
           portENTER_CRITICAL(&self->_eventMux);self->_eventOverflow=true;portEXIT_CRITICAL(&self->_eventMux);
@@ -344,8 +344,8 @@ void BLEManager::tuneInterval(){
   }
 }
 
-bool BLEManager::notifyOne(void *context,uint16_t handle,const uint8_t *report,uint8_t id,size_t length) {
-  auto self=static_cast<BLEManager *>(context);auto p=self->peer(handle);
+bool BleHid::notifyOne(void *context,uint16_t handle,const uint8_t *report,uint8_t id,size_t length) {
+  auto self=static_cast<BleHid *>(context);auto p=self->peer(handle);
   ble_gap_conn_desc live;
   if(id<1||id>2||!p||p->slot<0||!(p->subscribed&(1u<<(id-1)))||!p->encrypted||
      ble_gap_conn_find(handle,&live)!=0||!live.sec_state.encrypted||self->knownSlot(live.peer_id_addr)!=p->slot)return false;
@@ -360,7 +360,7 @@ bool BLEManager::notifyOne(void *context,uint16_t handle,const uint8_t *report,u
   else {++self->_txFailed;++self->_totalTxFailed;if(!self->_failedSince)self->_failedSince=millis();}
   return sent;
 }
-void BLEManager::selectSlot(uint8_t slot) {
+void BleHid::selectSlot(uint8_t slot) {
   if(slot>=3)return;
   if(slot!=_config.selected) {
     SlotConfig next=_config;next.selected=slot;++next.generation;
@@ -372,13 +372,13 @@ void BLEManager::selectSlot(uint8_t slot) {
   Serial.printf("[BLE] Selected computer %u (connections kept open)\n",slot+1);
   printStatus();
 }
-void BLEManager::sendKeyboardReport(const uint8_t *keys, uint8_t modifiers) {
+void BleHid::sendKeyboardReport(const uint8_t *keys, uint8_t modifiers) {
   ++_keyboardIn;
   uint8_t report[8] = {modifiers, 0}; memcpy(report + 2, keys, 6);
   if(!isConnected()){_pendingKeyboard.clear();return;}
   if(!_pendingKeyboard.push(report)){releaseAll();++_inputEpoch;Serial.println("[Input] Keyboard queue overflow; released input");}
 }
-void BLEManager::printStatus() {
+void BleHid::printStatus() {
   ControllerDiagnostics::printStatus();
   static uint32_t last=0;
   const uint32_t now=millis();
@@ -401,7 +401,7 @@ void BLEManager::printStatus() {
   }
 }
 
-void BLEManager::sendMouseReport(const MouseReport &r,uint32_t received) {
+void BleHid::sendMouseReport(const MouseReport &r,uint32_t received) {
   ++_mouseIn;
   _mouseArrivalSpacing.observe(received);
   _mouseBridgeWait.add(micros()-received);
@@ -431,16 +431,16 @@ static String shortcutLabel(const ShortcutBinding &b){
   }
   return label;
 }
-String BLEManager::recordedLabel()const{
+String BleHid::recordedLabel()const{
   return shortcutLabel(_shortcutRecorder.candidate)+(_shortcutRecorder.target==Slot?" + 1/2/3":"");
 }
-String BLEManager::bindingLabel(unsigned action,unsigned kind)const{
+String BleHid::bindingLabel(unsigned action,unsigned kind)const{
   if(action>3||(kind!=1&&kind!=2)||(action==3&&kind==2))return "Not available";
   const auto &binding=_shortcuts.bindings[shortcutBindingIndex(action,kind)];
   if(emptyShortcut(binding))return "Not set";
   return shortcutLabel(binding)+(action==Slot?" + 1/2/3":"");
 }
-void BLEManager::appendShortcuts(JsonObject result)const{
+void BleHid::appendShortcuts(JsonObject result)const{
   result["generation"]=_shortcuts.generation;
   auto list=result["bindings"].to<JsonArray>();
   // Compact tuples keep all seven bindings within one 512-byte ATT value.
@@ -449,7 +449,7 @@ void BLEManager::appendShortcuts(JsonObject result)const{
     for(auto key:b.keys)if(key)keys.add(key);item.add(b.buttons);
   }
 }
-bool BLEManager::shortcutCommand(JsonVariantConst command,JsonObject result,String &error){
+bool BleHid::shortcutCommand(JsonVariantConst command,JsonObject result,String &error){
   const char *op=command["op"]|"";
   if(!strcmp(op,"shortcuts")){appendShortcuts(result);return true;}
   if(!strcmp(op,"shortcut-record")){
@@ -496,7 +496,7 @@ bool BLEManager::shortcutCommand(JsonVariantConst command,JsonObject result,Stri
   error="Unknown shortcut command";return false;
 }
 
-bool BLEManager::setDeviceName(const String &name) {
+bool BleHid::setDeviceName(const String &name) {
   if(!validDeviceName(name.c_str(),name.length()))return false;
   if(name==_deviceName)return true;
   auto adv=NimBLEDevice::getAdvertising();
@@ -510,7 +510,7 @@ bool BLEManager::setDeviceName(const String &name) {
   _deviceName=name;return true;
 }
 
-String BLEManager::forgetComputer(unsigned slot){
+String BleHid::forgetComputer(unsigned slot){
   if(slot>=3)return "Choose a slot from 1 to 3.";
   for(const auto &p:_peers)if(p.handle!=MultiHostRouter::NONE&&p.slot<0)return "Wait for pairing to finish, then retry.";
   const auto result=forgetPairing(_config,slot,
@@ -542,11 +542,11 @@ String BLEManager::forgetComputer(unsigned slot){
   return "Could not finish. Retry Forget pairing; a restart also retries pending removal.";
 }
 
-bool BLEManager::saveConfig(const SlotConfig &config) { return _prefs.putBytes("config",&config,sizeof(config))==sizeof(config); }
-void BLEManager::applyIdentities() {
+bool BleHid::saveConfig(const SlotConfig &config) { return _prefs.putBytes("config",&config,sizeof(config))==sizeof(config); }
+void BleHid::applyIdentities() {
   for(unsigned i=0;i<3;++i){_assigned[i]=_config.slots[i].assigned;_identities[i].type=_config.slots[i].type;memcpy(_identities[i].val,_config.slots[i].address,6);}
 }
-bool BLEManager::configure(const uint8_t order[3],const char names[3][33],uint32_t generation) {
+bool BleHid::configure(const uint8_t order[3],const char names[3][33],uint32_t generation) {
   if(generation!=_config.generation)return false;
   // Avoid reassignment during an in-progress pairing handshake.
   for(const auto &p:_peers)if(p.handle!=MultiHostRouter::NONE&&p.slot<0)return false;
@@ -562,7 +562,7 @@ static void timingJson(JsonObject out,const TimingStats &stats){
   out["mean_ms"]=stats.mean()/1000.0;out["max_ms"]=stats.max/1000.0;
   out["stddev_ms"]=stats.deviation()/1000.0;out["p95_upper_ms"]=stats.count?stats.p95Upper()/1000.0:0;
 }
-void BLEManager::appendStatus(JsonObject out){
+void BleHid::appendStatus(JsonObject out){
   ControllerDiagnostics::appendStatus(out["controller"].to<JsonObject>());
   auto timing=out["mouse_timing"].to<JsonObject>();
   timing["scope"]="since_restart";timing["idle_cutoff_ms"]=100;

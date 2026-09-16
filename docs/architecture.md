@@ -1,0 +1,38 @@
+# Architecture
+
+`main.cpp` owns one `Application` for the firmware lifetime. Arduino calls its startup and tick functions.
+
+| Component | Responsibility |
+| --- | --- |
+| Application | Input queue, physical input state, shortcuts, menu, LEDs, UART |
+| UsbHost | Native USB startup, HID interfaces, mouse decoding, USB recovery |
+| BleHid | BLE peers, saved configuration, input submission, connection recovery |
+| MenuBackend | Connect the text menu to application services |
+| DeviceMenu, TextConsole | Menu state and paced text output |
+| InputState, UsbMice | Release barriers and mouse button state |
+| MultiHostRouter, pending queues, MouseCadence | Selected-host routing and bounded input scheduling |
+| Board | Pins, serial speed, and default identity |
+
+## Task boundaries
+
+The application loop owns settings, BLE routing, and the menu. BLE callbacks copy events into a bounded queue. USB callbacks copy input into a separate bounded queue. Callbacks do not write settings or run the menu.
+
+The USB host task services the controller. The HID driver task receives reports. A connection worker opens interfaces and reads descriptors. A short lock protects USB interface and mouse state. No driver call, output callback, or serial write runs under that lock.
+
+USB callbacks close detached interfaces. The driver owns handle storage; application input queues contain copied reports, not driver pointers. Diagnostics use snapshots and do not register temporary USB clients.
+
+## Input rules
+
+Drain USB input before each BLE submission pass. Preserve keyboard transitions. Accumulate relative mouse movement with the existing bounded queues and negotiated pacing.
+
+Only the selected host receives normal input. Switching releases held input. Menu transitions suppress held shortcut keys and mouse buttons until release. Queue overflow and USB recovery require release even when the last physical state is unknown.
+
+## Persistence and compatibility
+
+Keep the existing NVS namespaces, record formats, partition offsets, BLE report map, and GATT identity. Renaming a source file must not require pairing again. Pairing removal uses a saved pending marker so startup can complete an interrupted removal.
+
+## Changes and validation
+
+Put platform-independent behavior in small state types with host tests. Inject service references into adapters. Keep queues bounded and report callbacks short. Do not add sleeps or allocation to the normal report path.
+
+Run `sh scripts/test-host.sh`, `pio run`, and `python3 tests/partition-layout.py`. Hardware tests must also cover reconnect, setup, switching, and simultaneous keyboard/mouse input. Host tests and controller timing do not prove mouse-to-screen latency.
