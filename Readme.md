@@ -115,7 +115,7 @@ Tested hardware: Moonlander, Logitech MX Master 3S receiver, USB hub, and two Ma
 
 Connect your keyboard and mouse directly or through one USB hub. Hubs cannot be chained together. Keyboards must support sending up to six held keys at once, plus modifier keys such as Ctrl and Shift. Mice with up to eight buttons are supported.
 
-Media keys, touchscreens, drawing tablets, and Logitech configuration apps are not supported.
+Media keys, touchscreens, and drawing tablets are not supported. Vendor-specific configuration protocols, including HID++, are not supported yet.
 
 Menu text requires the US keyboard layout and Caps Lock off. Normal input does not have this restriction. Diagnostics do not measure total mouse-to-screen delay.
 
