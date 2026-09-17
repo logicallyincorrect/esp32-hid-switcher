@@ -5,10 +5,17 @@ struct Fixture {
   EdgeSwitch e;
   Fixture(uint8_t ready=7){e.sync(0,ready,true,0);sample(0,0,1000);sample(0,2,1000);}
   void sample(unsigned slot,uint8_t edge,uint32_t now,bool drag=false,bool enabled=true){e.sample(slot,{edge,drag,enabled,0,e.epoch},now,now);}
-  bool push(uint32_t now){return e.motion(1,0,now,now);}
+  bool push(uint32_t now){return e.motion(EdgeSwitch::pushDistance,0,now,now);}
 };
 int main(){
-  // One outward count switches on the first report, without destination samples.
+  // Crossing the distance threshold switches immediately, without destination samples.
+  Fixture stop;assert(!stop.e.motion(23,0,1000,1000));
+  for(uint32_t t=1100;t<=3000;t+=100){stop.sample(0,2,t);assert(stop.e.finish(t)==-1);assert(!stop.e.motion(0,0,t,t));}
+  assert(stop.e.motion(1,0,3000,3000));assert(stop.e.finish(3000)==1);
+  Fixture reversal;assert(!reversal.e.motion(23,0,1000,1000));assert(!reversal.e.motion(-1,0,1000,1000));assert(!reversal.e.motion(1,0,1000,1000));assert(reversal.e.motion(23,0,1000,1000));
+  Fixture leave;assert(!leave.e.motion(23,0,1000,1000));leave.sample(0,0,1000);leave.sample(0,2,1000);assert(!leave.e.motion(1,0,1000,1000));
+  Fixture held;assert(!held.e.motion(23,0,1000,1000));assert(!held.e.motion(0,1,1000,1000));assert(!held.e.motion(1,0,1000,1000));
+  Fixture slow;for(uint32_t t=1000;t<=1400;t+=200){slow.sample(0,2,t);assert(!slow.e.motion(6,0,t,t));}slow.sample(0,2,1600);assert(slow.e.motion(6,0,1600,1600));
   Fixture right;assert(right.push(1000));assert(right.e.finish(1000)==1);
   // Every slot, direction and connection mask: edges never wrap around.
   for(unsigned current=0;current<3;++current)for(unsigned mask=1;mask<8;++mask){
@@ -20,7 +27,7 @@ int main(){
       int expected=-1;
       if(direction<0){for(int slot=int(current)-1;slot>=0;--slot)if(mask&(1u<<slot)){expected=slot;break;}}
       else {for(unsigned slot=current+1;slot<3;++slot)if(mask&(1u<<slot)){expected=int(slot);break;}}
-      assert(e.motion(direction,0,1000,1000)==(expected>=0));
+      assert(e.motion(direction*int(EdgeSwitch::pushDistance),0,1000,1000)==(expected>=0));
       assert(e.finish(1000)==expected);
     }
   }
@@ -32,6 +39,7 @@ int main(){
   Fixture buttons;assert(!buttons.e.motion(1,1,1000,1000));
   Fixture reverse;assert(!reverse.e.motion(-1,0,1000,1000));assert(reverse.push(1000));
   Fixture vertical;assert(!vertical.e.motion(0,0,1000,1000));
+  Fixture beforeEdge;assert(!beforeEdge.e.motion(100,0,999,1000));assert(!beforeEdge.e.motion(1,0,1000,1000));
   Fixture queued;assert(!queued.e.motion(1,0,800,1000));
   Fixture blocked;blocked.e.sync(0,7,false,1000);assert(!blocked.push(1000));
   Fixture cancel;assert(cancel.push(1000));cancel.e.sync(0,7,false,1000);assert(cancel.e.finish(1000)==-1);
