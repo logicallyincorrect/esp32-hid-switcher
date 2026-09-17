@@ -4,6 +4,9 @@
 #include <vector>
 #include <array>
 struct FakeBackend {
+  unsigned edgeDistance=100;bool edgeSave=true;
+  unsigned edgeThreshold(){return edgeDistance;}
+  bool setEdgeThreshold(unsigned value){if(!edgeSave)return false;edgeDistance=value;++saves;return true;}
   bool online=true,accept=true;unsigned slot=0,revision=0,releases=0,saves=0;
   ShortcutRecorder recorder;ShortcutConfig shortcuts;
   std::string output,name="HID SWITCHER BLE";
@@ -70,7 +73,14 @@ int main(){
   assert(!emitter.busy());assert(!emitter.append(std::string(4097,'x')));
   MenuButton button;assert(!button.update(true,false,0xfffffff0));assert(button.update(true,false,3000));assert(!button.update(true,true,3010));
   button.update(false,true,3011);assert(button.update(true,true,3012));
-  Fixture f;f.open();assert(f.b.output.find("1 Computers\n2 Shortcuts\n3 Bluetooth name\n4 Diagnostics\nESC Exit")!=std::string::npos);
+  Fixture f;f.open();assert(f.b.output.find("1 Computers\n2 Shortcuts\n3 Bluetooth name\n4 Diagnostics\n5 Edge switching\nESC Exit")!=std::string::npos);
+  Fixture edge;edge.open();edge.press('5');assert(edge.b.output.find("Current edge distance: 100 counts")!=std::string::npos);
+  for(char c:std::string("250"))edge.press(c);edge.press('\n');assert(edge.b.edgeDistance==100);edge.press('Y');assert(edge.b.edgeDistance==250);
+  edge.press('5');assert(edge.b.output.find("Current edge distance: 250 counts")!=std::string::npos);
+  edge.press('0');edge.press('\n');assert(edge.b.output.find("Enter a whole number")!=std::string::npos&&edge.b.edgeDistance==250);
+  edge.press('1');edge.back();assert(edge.menu.active()&&edge.b.edgeDistance==250);
+  edge.press('5');edge.press('2');edge.press('\n');edge.press('N');assert(edge.b.edgeDistance==250);
+  edge.b.edgeSave=false;edge.press('5');edge.press('3');edge.press('\n');edge.press('y');assert(edge.b.edgeDistance==250);assert(edge.b.output.find("Could not save")!=std::string::npos);
   Fixture overview;overview.open();overview.press('2');
   assert(overview.b.output.find("1 Cycle\nKeyboard: Assigned\nMouse: Not set")!=std::string::npos);
   assert(overview.b.output.find("2 Next\nKeyboard: Not set\nMouse: Not set")!=std::string::npos);

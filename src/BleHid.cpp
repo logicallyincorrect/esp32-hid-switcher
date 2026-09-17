@@ -48,6 +48,7 @@ void BleHid::begin(uint8_t slot) {
     }
     if(!saveConfig(_config)){Serial.println("[Config] Cannot save slot assignments");abort();}
   }
+  _edges.setThreshold(_prefs.getUInt("edge-distance",EdgeSettings::defaultDistance),millis());
   // An interrupted timing probe stays disabled across reboot; normal pairing
   // and input still work. Do not repeatedly trigger a controller fault.
   _intervalTuningDisabled=_prefs.getBool("interval-probe",false);
@@ -642,4 +643,11 @@ void BleHid::serviceEdges(bool allowed){
     uint8_t packet[EdgeProtocol::size];_edges.packet(unsigned(p.slot),packet);
     if(_edgeStatus->notify(packet,sizeof(packet),p.handle)){p.edgeSentEpoch=_edges.epoch;p.edgeSentAt=now;}
   }
+}
+
+bool BleHid::setEdgeThreshold(unsigned value){
+  if(!EdgeSettings::valid(value))return false;
+  if(value==_edges.threshold())return true;
+  if(_prefs.putUInt("edge-distance",value)!=sizeof(uint32_t))return false;
+  return _edges.setThreshold(value,millis());
 }

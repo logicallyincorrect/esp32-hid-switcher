@@ -1,24 +1,25 @@
 #pragma once
 #include "TextConsole.h"
+#include "EdgeSettings.h"
 #include <string.h>
 
 // Platform-independent state machine. Backend owns settings and BLE transport.
 template<class Backend> class DeviceMenu {
   enum Page { Main,Computers,RenameSlot,RenameText,RenameConfirm,MoveFrom,MoveTo,MoveConfirm,
               SelectSlot,SelectDrain,ForgetSlot,ForgetConfirm,ForgetDrain,Actions,Binding,RecordArming,Recording,RecordConfirm,
-              ClearConfirm,ResetConfirm,NameText,NameConfirm };
+              ClearConfirm,ResetConfirm,NameText,NameConfirm,EdgeText,EdgeConfirm };
   Backend &_backend;
   TextConsole _output;
   MenuButton _button;
   Page _page=Main;
   bool _active=false,_released=false,_textReady=false;
   uint8_t _previous[6]={},_modifiers=0,_buttons=0;
-  unsigned _host=0,_slot=0,_destination=0,_action=0,_kind=0;
+  unsigned _host=0,_slot=0,_destination=0,_action=0,_kind=0,_edgeDistance=0;
   uint32_t _session=0,_activity=0;
   std::string _name;
   void print(const std::string &text){if(!_output.append(text))close();}
   void prompt(const std::string &text){_textReady=false;print("\n"+text+(_page==Main?"":"\nESC Back")+"\n> ");}
-  void main(){_page=Main;prompt("1 Computers\n2 Shortcuts\n3 Bluetooth name\n4 Diagnostics\nESC Exit");}
+  void main(){_page=Main;prompt("1 Computers\n2 Shortcuts\n3 Bluetooth name\n4 Diagnostics\n5 Edge switching\nESC Exit");}
   void computers(){_page=Computers;prompt(_backend.computers()+"1 Rename\n2 Move\n3 Select\n4 Forget pairing");}
   void actions(){
     _page=Actions;std::string text;
@@ -32,7 +33,7 @@ template<class Backend> class DeviceMenu {
     _backend.cancelRecord();_backend.release();_output.clear();_name.clear();_textReady=false;
     switch(_page){
     case Main:close();break;
-    case Computers:case Actions:case NameText:case NameConfirm:main();break;
+    case Computers:case Actions:case NameText:case NameConfirm:case EdgeText:case EdgeConfirm:main();break;
     case RenameSlot:computers();break;
     case RenameText:case RenameConfirm:_page=RenameSlot;prompt("Rename slot:\n"+_backend.computers());break;
     case MoveFrom:case SelectSlot:case SelectDrain:case ForgetSlot:computers();break;
@@ -45,13 +46,17 @@ template<class Backend> class DeviceMenu {
   static unsigned number(char c){return unsigned(c-'1');}
   void key(uint8_t code,uint8_t mods){
     char c=inputCharacter(code,mods);
-    if(_page==RenameText||_page==NameText){
+    if(_page==RenameText||_page==NameText||_page==EdgeText){
       if(code==42&&mods==0){if(!_name.empty()){_name.pop_back();print("\b");}return;}
       if(code==40&&mods==0){
+        if(_page==EdgeText){
+          if(!EdgeSettings::parse(_name,_edgeDistance)){_name.clear();prompt("Enter a whole number from 1 to 10000.");return;}
+          _page=EdgeConfirm;prompt("Save edge distance: "+std::to_string(_edgeDistance)+" counts?\ny Yes\nn No");return;
+        }
         if(_name.empty()){prompt("Enter a name.");return;}
         _page=_page==RenameText?RenameConfirm:NameConfirm;prompt("Save name: "+_name+"?\ny Yes\nn No");return;
       }
-      const size_t limit=_page==NameText?29:32;
+      const size_t limit=_page==EdgeText?32:(_page==NameText?29:32);
       if(c&&_name.size()<limit){_name+=c;print(std::string(1,c));}
       return;
     }
@@ -60,7 +65,8 @@ template<class Backend> class DeviceMenu {
     case Main:
       if(c=='1')computers();else if(c=='2')actions();
       else if(c=='3'){_name.clear();_page=NameText;prompt("Current Bluetooth name: "+_backend.deviceName()+"\nNew name (ASCII, 29 characters). Enter to review.");}
-      else if(c=='4'){prompt(_backend.diagnostics());main();}break;
+      else if(c=='4'){prompt(_backend.diagnostics());main();}
+      else if(c=='5'){_name.clear();_page=EdgeText;prompt("Current edge distance: "+std::to_string(_backend.edgeThreshold())+" counts\nNew distance (1-10000). Higher needs more mouse movement.\nEnter to review.");}break;
     case Computers:
       if(c=='1'){_page=RenameSlot;prompt("Rename slot:\n"+_backend.computers());}
       else if(c=='2'){_page=MoveFrom;prompt("Move from slot:\n"+_backend.computers());}
@@ -87,6 +93,8 @@ template<class Backend> class DeviceMenu {
       else if(c=='n')computers();break;
     case RenameConfirm:
       if(c=='y')done(_backend.rename(_slot,_name));else if(c=='n')computers();break;
+    case EdgeConfirm:
+      if(c=='y')done(_backend.setEdgeThreshold(_edgeDistance));else if(c=='n')main();break;
     case NameConfirm:
       if(c=='y')done(_backend.renameDevice(_name));else if(c=='n')main();break;
     case SelectSlot:
@@ -138,9 +146,9 @@ public:
     for(unsigned i=0;i<6;++i)if(keys[i]){
       bool held=false;for(auto k:previous)if(k==keys[i])held=true;
       if(!held){
-        const bool editing=_textReady&&(_page==NameText||_page==RenameText);
+        const bool editing=_textReady&&(_page==NameText||_page==RenameText||_page==EdgeText);
         key(keys[i],modifiers);
-        if(!editing||(_page!=NameText&&_page!=RenameText))break;
+        if(!editing||(_page!=NameText&&_page!=RenameText&&_page!=EdgeText))break;
       }
     }
     return true;
@@ -157,7 +165,7 @@ public:
     if(!_backend.connected()||_backend.selected()!=_host||_backend.session()!=_session||uint32_t(now-_activity)>120000){close();return;}
     _output.tick(now,_backend.reportSpacing(),[this](const uint8_t *report){return _backend.send(report);});
     if(_output.busy())return;
-    if(_page==NameText||_page==RenameText)_textReady=true;
+    if(_page==NameText||_page==RenameText||_page==EdgeText)_textReady=true;
     if(_page==SelectDrain){const auto slot=_destination;close();_backend.select(slot);return;}
     if(_page==ForgetDrain){
       const auto error=_backend.forget(_slot);

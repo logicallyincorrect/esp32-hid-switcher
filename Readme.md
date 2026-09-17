@@ -40,7 +40,7 @@ Cmd means Command on macOS or Windows/Super on other keyboards. Left and right m
 
 ## Switch at the edge of the screen
 
-An optional [macOS companion](companion/README.md) lets you push the pointer against the right edge to select the next computer, or the left edge to select the previous one. Install it on each Mac from which you want to switch at a screen edge. Disconnected computers are skipped. Slots run left to right as 1, 2, 3. Edge switching stops at either end and does not wrap. Switching does not require a companion on the destination. Push 100 relative mouse counts outward after reaching an edge to switch input; the destination pointer stays where it was.
+An optional [macOS companion](companion/README.md) lets you push the pointer against the right edge to select the next computer, or the left edge to select the previous one. Install it on each Mac from which you want to switch at a screen edge. Disconnected computers are skipped. Slots run left to right as 1, 2, 3. Edge switching stops at either end and does not wrap. Switching does not require a companion on the destination. Push outward after reaching an edge to switch input (100 mouse counts by default); the destination pointer stays where it was.
 
 Shared monitor boundaries stay on the same computer. Dragging, held keys, and the setup menu disable edge switching. Keyboard and mouse shortcuts remain available.
 
@@ -67,6 +67,9 @@ Use a text editor, not a command shell. Keep the document selected until you exi
 | Shortcuts | Record, clear, or restore shortcuts |
 | Bluetooth name | Change the device name |
 | Diagnostics | Show USB status, Bluetooth errors, and report times |
+| Edge switching | Set the outward movement distance (1-10000 counts) |
+
+To change the edge distance, select **5 Edge switching**, enter a value, press Enter, then `y`. The value applies immediately and stays saved after restart.
 
 Each configuration menu shows the current settings. Unassigned shortcuts show **Not set**.
 

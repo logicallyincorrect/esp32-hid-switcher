@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <cstddef>
+#include "EdgeSettings.h"
 
 namespace EdgeProtocol {
 inline constexpr char service[] = "e963a000-8f4d-4a7b-9b65-62485c81a320";
@@ -20,7 +21,7 @@ inline bool decode(const uint8_t *p,size_t n,Sample &out){
 class EdgeSwitch {
 public:
   static constexpr uint32_t freshness=600, cooldown=800;
-  static constexpr unsigned pushDistance=100;
+  static constexpr unsigned pushDistance=EdgeSettings::defaultDistance;
   struct Host {EdgeProtocol::Sample sample;uint32_t received=0,edgeSince=0;bool seen=false,armed=false;};
   uint32_t epoch=1;
   unsigned selected=0;
@@ -30,9 +31,14 @@ private:
   bool _allowed=false;
   uint8_t _ready=0;
   uint32_t _changed=0;
-  unsigned _distance=0;
+  unsigned _distance=0,_threshold=pushDistance;
   bool fresh(unsigned slot,uint32_t now)const{return slot<3&&(_ready&(1u<<slot))&&_hosts[slot].seen&&_hosts[slot].sample.enabled&&!_hosts[slot].sample.dragging&&uint32_t(now-_hosts[slot].received)<=freshness;}
 public:
+  unsigned threshold()const{return _threshold;}
+  bool setThreshold(unsigned value,uint32_t now){
+    if(!EdgeSettings::valid(value))return false;
+    _threshold=value;reset(now);return true;
+  }
   void reset(uint32_t now){
     ++epoch;if(!epoch)++epoch;
     for(auto &host:_hosts)host={};
@@ -61,7 +67,7 @@ public:
     int outward=host.sample.edge==1?-int(dx):int(dx);
     if(outward<=0){if(outward<0)_distance=0;return false;}
     _distance+=unsigned(outward);
-    if(_distance<pushDistance)return false;
+    if(_distance<_threshold)return false;
     int destination=-1;
     const int direction=host.sample.edge==1?-1:1;
     for(int slot=int(selected)+direction;slot>=0&&slot<3;slot+=direction){

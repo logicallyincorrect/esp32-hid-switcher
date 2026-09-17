@@ -8,6 +8,12 @@ struct Fixture {
   bool push(uint32_t now){return e.motion(EdgeSwitch::pushDistance,0,now,now);}
 };
 int main(){
+  unsigned parsed=100;assert(EdgeSettings::parse("1",parsed)&&parsed==1);assert(EdgeSettings::parse("10000",parsed)&&parsed==10000);
+  for(const auto &text:{"", "0", "10001", "-1", "2.5", "1x", "999999999999999999999999"})assert(!EdgeSettings::parse(text,parsed));
+  Fixture configurable;assert(configurable.e.threshold()==100);assert(configurable.e.setThreshold(250,0));
+  configurable.sample(0,0,1000);configurable.sample(0,2,1000);assert(!configurable.e.motion(249,0,1000,1000));assert(configurable.e.motion(1,0,1000,1000));
+  assert(!configurable.e.setThreshold(0,1000)&&configurable.e.threshold()==250);assert(configurable.e.setThreshold(1,1000));assert(configurable.e.finish(1000)==-1);
+
   // Crossing the distance threshold switches immediately, without destination samples.
   Fixture stop;assert(!stop.e.motion(99,0,1000,1000));
   for(uint32_t t=1100;t<=3000;t+=100){stop.sample(0,2,t);assert(stop.e.finish(t)==-1);assert(!stop.e.motion(0,0,t,t));}

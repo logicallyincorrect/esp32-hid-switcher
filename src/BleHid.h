@@ -26,6 +26,8 @@ public:
   void flushInput();
   bool edgeMouse(const MouseReport &report,uint32_t received,bool blocked);
   void serviceEdges(bool allowed);
+  unsigned edgeThreshold()const{return _edges.threshold();}
+  bool setEdgeThreshold(unsigned value);
 
   const String &deviceName() const { return _deviceName; }
   bool setDeviceName(const String &name);

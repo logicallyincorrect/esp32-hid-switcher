@@ -58,6 +58,8 @@ public:
   }
   bool paired(unsigned slot){return _ble.config().slots[slot].assigned!=0;}
   std::string forget(unsigned slot){return _ble.forgetComputer(slot).c_str();}
+  unsigned edgeThreshold(){return _ble.edgeThreshold();}
+  bool setEdgeThreshold(unsigned value){return _ble.setEdgeThreshold(value);}
   bool renameDevice(const std::string &name){return _ble.setDeviceName(name.c_str());}
   bool clearBinding(unsigned action,unsigned kind){return command("shortcut-clear",action,kind);}
   bool resetBindings(){return command("shortcuts-reset");}
