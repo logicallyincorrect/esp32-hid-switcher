@@ -86,11 +86,15 @@ void UsbHost::open(hid_host_device_handle_t handle) {
   hid_host_device_config_t config = {};
   config.callback = report;
   config.callback_arg = this;
-  if (hid_host_device_open(handle, &config) != ESP_OK) {
+  const esp_err_t opened = hid_host_device_open(handle, &config);
+  if (opened != ESP_OK) {
     portENTER_CRITICAL(&_lock);
     ++_openErrors;
-    _fault = true;
     portEXIT_CRITICAL(&_lock);
+    // An optional interface can exceed the controller's channel capacity.
+    // Resetting the bus cannot add channels and drops working input devices.
+    Serial.printf("[USB] Interface address=%u interface=%u unavailable: %s; keeping active devices\n",
+                  params.addr, params.iface_num, esp_err_to_name(opened));
     return;
   }
   const bool keyboard = params.proto == HID_PROTOCOL_KEYBOARD && params.sub_class == HID_SUBCLASS_BOOT_INTERFACE;

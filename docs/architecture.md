@@ -21,6 +21,8 @@ The application loop owns settings, BLE routing, and the menu. BLE callbacks cop
 
 The USB host task services the controller. The HID driver task receives reports. A connection worker opens interfaces and reads descriptors. A short lock protects USB interface and mouse state. No driver call, output callback, or serial write runs under that lock.
 
+Startup retains a one-second settling interval before USB installation. An interface-open failure is reported without resetting the bus: an optional interface can exceed the controller channel limit while keyboard and mouse input remain active. Transfer failures still use the bounded recovery policy.
+
 USB callbacks close detached interfaces. The driver owns handle storage; application input queues contain copied reports, not driver pointers. Diagnostics use snapshots and do not register temporary USB clients.
 
 ## Input rules
