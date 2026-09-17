@@ -60,7 +60,8 @@ final class Companion: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
         watch(NSWorkspace.screensDidWakeNotification) { self.screensAwake = true; self.resumed() }
         watch(NSWorkspace.sessionDidResignActiveNotification) { self.sessionActive = false; self.send(force: true) }
         watch(NSWorkspace.sessionDidBecomeActiveNotification) { self.sessionActive = true; self.resumed() }
-        timer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { _ in self.tick() }
+        timer = Timer(timeInterval: 0.04, repeats: true) { _ in self.tick() }
+        RunLoop.main.add(timer!, forMode: .common)
         if listing { DispatchQueue.main.asyncAfter(deadline: .now() + 8) { exit(0) } }
     }
     private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }

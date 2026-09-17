@@ -34,11 +34,13 @@ final class MenuBarApp: NSObject, NSApplicationDelegate {
             self.devices[id] = name; self.updateDevices()
         }
         updateDevices()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.status.title = self.companion.statusText
             self.item.button?.toolTip = "HID Switcher — " + self.companion.statusText
         }
+        RunLoop.main.add(timer!, forMode: .common)
+        status.title = companion.statusText
         // Show the menu on launch so a first-time user can see where the app lives.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.item.button?.performClick(nil) }
     }
