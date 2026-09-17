@@ -1,5 +1,6 @@
 #include "EdgeSwitch.h"
 #include <cassert>
+#include <initializer_list>
 struct Fixture {
   EdgeSwitch e;
   Fixture(uint8_t ready=7){e.sync(0,ready,true,0);sample(0,0,1000);sample(0,2,1000);}
@@ -9,7 +10,20 @@ struct Fixture {
 int main(){
   // One outward count switches on the first report, without destination samples.
   Fixture right;assert(right.push(1000));assert(right.e.finish(1000)==1);
-  Fixture left;left.sample(0,1,1000);assert(left.e.motion(-1,0,1000,1000));assert(left.e.finish(1000)==2);
+  // Every slot, direction and connection mask: edges never wrap around.
+  for(unsigned current=0;current<3;++current)for(unsigned mask=1;mask<8;++mask){
+    if(!(mask&(1u<<current)))continue;
+    for(int direction:{-1,1}){
+      EdgeSwitch e;e.sync(current,mask,true,0);
+      e.sample(current,{0,false,true,0,e.epoch},1000,1000);
+      e.sample(current,{uint8_t(direction<0?1:2),false,true,0,e.epoch},1000,1000);
+      int expected=-1;
+      if(direction<0){for(int slot=int(current)-1;slot>=0;--slot)if(mask&(1u<<slot)){expected=slot;break;}}
+      else {for(unsigned slot=current+1;slot<3;++slot)if(mask&(1u<<slot)){expected=int(slot);break;}}
+      assert(e.motion(direction,0,1000,1000)==(expected>=0));
+      assert(e.finish(1000)==expected);
+    }
+  }
   Fixture skip(5);assert(skip.push(1000));assert(skip.e.finish(1000)==2);
   Fixture alone(1);assert(!alone.push(1000));
   Fixture disabled;disabled.sample(1,0,1000,false,false);assert(disabled.push(1000));assert(disabled.e.finish(1000)==1);

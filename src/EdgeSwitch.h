@@ -54,7 +54,10 @@ public:
     int outward=host.sample.edge==1?-int(dx):int(dx);
     if(outward<=0)return false;
     int destination=-1;
-    for(unsigned step=1;step<3;++step){unsigned slot=(selected+(host.sample.edge==1?3-step:step))%3;if(_ready&(1u<<slot)){destination=int(slot);break;}}
+    const int direction=host.sample.edge==1?-1:1;
+    for(int slot=int(selected)+direction;slot>=0&&slot<3;slot+=direction){
+      if(_ready&(1u<<slot)){destination=slot;break;}
+    }
     if(destination<0)return false;
     target=destination;
     return true;

@@ -1,6 +1,6 @@
 # Edge-switching companion
 
-The optional macOS companion switches computers when you push the pointer against the left or right edge of your desktop. Right selects the next available slot; left selects the previous slot. It skips disconnected computers. The destination does not need a companion.
+The optional macOS companion switches computers when you push the pointer against the left or right edge of your desktop. Right selects the next available slot; left selects the previous slot. It skips disconnected computers. Slots run left to right as 1, 2, 3. Edge switching stops at either end and does not wrap. The destination does not need a companion.
 
 Install it on each Mac from which you want to switch at a screen edge. It requires macOS 13 or later, Bluetooth, Accessibility permission, and firmware with the edge service. Pair HID Switcher in macOS Bluetooth settings first. Existing shortcuts and device configuration work without this companion. No Wi-Fi or network listener is used.
 
