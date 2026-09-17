@@ -6,7 +6,7 @@ Install it on each Mac from which you want to switch at a screen edge. It requir
 
 ## Open the app
 
-Double-click `HID Switcher Companion.app`. A mouse icon appears in the macOS menu bar. Open its menu, select **Choose device**, and select your HID Switcher. The app remembers your selection. Other connected HID devices can appear in the list.
+Copy `HID-Switcher-Companion-macOS.zip` to the other Mac and unzip it. Move the complete `HID Switcher Companion.app` to Applications, then double-click it. The app supports Intel and Apple Silicon Macs; do not copy only the executable from inside the bundle. A mouse icon appears in the macOS menu bar. Open its menu, select **Choose device**, and select your HID Switcher. The app remembers your selection. Other connected HID devices can appear in the list.
 
 The menu shows connection status and provides **Allow Accessibility**, **Bluetooth Settings**, and **Quit HID Switcher**. Edge switching requires updated firmware on the board.
 
