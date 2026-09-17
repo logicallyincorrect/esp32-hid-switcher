@@ -40,6 +40,8 @@ Cmd means Command on macOS or Windows/Super on other keyboards. Left and right m
 
 ## Switch at the edge of the screen
 
+Download the companion ZIP from [Releases](https://github.com/logicallyincorrect/esp32-hid-switcher/releases), or get a development build from [Actions](https://github.com/logicallyincorrect/esp32-hid-switcher/actions/workflows/companion-macos.yml). See [build and installation instructions](companion/README.md).
+
 An optional [macOS companion](companion/README.md) lets you push the pointer against the right edge to select the next computer, or the left edge to select the previous one. Install it on each Mac from which you want to switch at a screen edge. Disconnected computers are skipped. Slots run left to right as 1, 2, 3. Edge switching stops at either end and does not wrap. Switching does not require a companion on the destination. Push outward after reaching an edge to switch input (100 mouse counts by default); the destination pointer stays where it was.
 
 Shared monitor boundaries stay on the same computer. Dragging, held keys, and the setup menu disable edge switching. Keyboard and mouse shortcuts remain available.

@@ -4,6 +4,20 @@ The optional macOS companion switches computers when you push the pointer agains
 
 Install it on each Mac from which you want to switch at a screen edge. It requires macOS 13 or later, Bluetooth, Accessibility permission, and firmware with the edge service. Pair HID Switcher in macOS Bluetooth settings first. Existing shortcuts and device configuration work without this companion. No Wi-Fi or network listener is used.
 
+## Download
+
+Published [GitHub releases](https://github.com/logicallyincorrect/esp32-hid-switcher/releases) include `HID-Switcher-Companion-macOS.zip` and its SHA-256 checksum after the build succeeds. The ZIP supports Intel and Apple Silicon Macs on macOS 13 or later.
+
+For a development build, open [Actions → macOS companion](https://github.com/logicallyincorrect/esp32-hid-switcher/actions/workflows/companion-macos.yml), select a successful run, and download its artifact. Extract the artifact, then extract the app ZIP inside it. Artifacts expire after 30 days.
+
+## Automated builds
+
+The workflow tests and builds companion changes on pull requests and pushes to `main`. To build manually, open the workflow page, select **Run workflow**, and choose a branch.
+
+Publishing a GitHub release builds that release's tag and attaches the ZIP and checksum. A failed build uploads no release assets. Re-running a successful release workflow replaces those two assets. Tags alone do not create a release.
+
+Builds use an ad-hoc signature. They are not Apple-notarized and require no signing secrets. CI checks tests, both CPU architectures, the extracted app, executable permissions, and signature integrity. It does not test Bluetooth hardware or Gatekeeper approval.
+
 ## Open the app
 
 Copy `HID-Switcher-Companion-macOS.zip` to the other Mac and unzip it. Move the complete `HID Switcher Companion.app` to Applications, then double-click it. The app supports Intel and Apple Silicon Macs; do not copy only the executable from inside the bundle. A mouse icon appears in the macOS menu bar. Open its menu, select **Choose device**, and select your HID Switcher. The app remembers your selection. Other connected HID devices can appear in the list.
@@ -23,6 +37,7 @@ From the repository root:
 ```sh
 sh companion/test.sh
 sh companion/build.sh
+sh companion/verify-package.sh
 "companion/build/HID Switcher Companion.app/Contents/MacOS/hid-switcher-companion" list
 ```
 
