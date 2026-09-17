@@ -10,6 +10,12 @@ Copy `HID-Switcher-Companion-macOS.zip` to the other Mac and unzip it. Move the 
 
 The menu shows connection status and provides **Allow Accessibility**, **Bluetooth Settings**, and **Quit HID Switcher**. Edge switching requires updated firmware on the board.
 
+## macOS blocks the app
+
+The local build is ad-hoc signed and is not notarized by Apple. ZIP and signature checks do not establish Gatekeeper approval on another Mac.
+
+If macOS reports an unidentified developer or says Apple cannot check the app, use **System Settings → Privacy & Security → Open Anyway** for this app. See [Apple's instructions](https://support.apple.com/en-us/102445). A managed Mac may require IT approval. A generic “cannot be opened” error can have a different cause; check the exact message before changing security settings.
+
 ## Build and try
 
 From the repository root:

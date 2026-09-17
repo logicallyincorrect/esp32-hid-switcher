@@ -17,3 +17,4 @@ printf '%s\n' "$app/Contents/MacOS/hid-switcher-companion"
 archive="companion/build/HID-Switcher-Companion-macOS.zip"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
 printf '%s\n' "$archive"
+printf '%s\n' 'Development build: ad-hoc signed, not Apple-notarized. Gatekeeper approval is separate from signature validation.' >&2
