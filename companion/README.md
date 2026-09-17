@@ -4,6 +4,12 @@ The optional macOS companion switches computers when you push the pointer agains
 
 Install it on each participating Mac. It requires macOS 13 or later, Bluetooth, Accessibility permission, and firmware with the edge service. Pair HID Switcher in macOS Bluetooth settings first. Existing shortcuts and device configuration work without this companion. No Wi-Fi or network listener is used.
 
+## Open the app
+
+Double-click `HID Switcher Companion.app`. A mouse icon appears in the macOS menu bar. Open its menu, select **Choose device**, and select your HID Switcher. The app remembers your selection. Other connected HID devices can appear in the list.
+
+The menu shows connection status and provides **Allow Accessibility**, **Bluetooth Settings**, and **Quit HID Switcher**. Edge switching requires updated firmware on the board.
+
 ## Build and try
 
 From the repository root:

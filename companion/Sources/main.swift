@@ -30,7 +30,20 @@ final class Companion: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
     private var inhibitUntil: TimeInterval = 0
     private var desktop = geometry(), lastLayout: TimeInterval = 0
     private var warnedPermission = false
-    let device: UUID?
+    private(set) var device: UUID?
+    var onDevice: ((UUID, String) -> Void)?
+    private var message = "Looking for HID Switcher…"
+    var statusText: String {
+        guard central.state == .poweredOn else { return central.state == .unauthorized ? "Allow Bluetooth in System Settings" : "Bluetooth is unavailable" }
+        guard device != nil else { return "Choose your HID Switcher below" }
+        guard let status else { return message }
+        guard enabled else { return AXIsProcessTrusted() ? "Edge switching paused" : "Accessibility permission required" }
+        return "Connected · this Mac: slot \(status.slot + 1) · selected: \(status.selected + 1)"
+    }
+    func selectDevice(_ id: UUID) {
+        if let peripheral { central.cancelPeripheralConnection(peripheral) }
+        clear(); device = id; message = "Looking for HID Switcher…"; discover()
+    }
     let listing: Bool
     private var listed = Set<UUID>()
     init(device: UUID?, listing: Bool) {
@@ -70,6 +83,7 @@ final class Companion: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
         if peripheral == nil { central.scanForPeripherals(withServices: [serviceID]) }
     }
     private func found(_ candidate: CBPeripheral) {
+        onDevice?(candidate.identifier, candidate.name ?? "Unnamed HID device")
         if listing {
             if listed.insert(candidate.identifier).inserted { print("\(candidate.identifier.uuidString)  \(candidate.name ?? "Unnamed HID device")") }
             return
@@ -78,13 +92,15 @@ final class Companion: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
         peripheral = candidate; candidate.delegate = self
         central.stopScan(); central.connect(candidate)
         lastStatus = now
-        log("Connecting to \(candidate.name ?? device.uuidString)…")
+        message = "Connecting to \(candidate.name ?? device.uuidString)…"
+        log(message)
     }
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) { found(peripheral) }
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) { guard peripheral === self.peripheral else { return }; peripheral.discoverServices([serviceID]) }
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) { guard peripheral === self.peripheral else { return }; log("Connection failed: \(error?.localizedDescription ?? "unknown error")"); clear() }
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) { guard peripheral === self.peripheral else { return }; log("Disconnected; retrying."); clear() }
     private func failed(_ reason: String) {
+        message = reason
         log(reason)
         if let peripheral { central.cancelPeripheralConnection(peripheral) }
         clear()
@@ -171,6 +187,14 @@ if arguments.first == "permissions" {
 let listing = arguments.first == "list"
 var device: UUID?
 if arguments.count == 3 && arguments[0] == "run" && arguments[1] == "--device" { device = UUID(uuidString: arguments[2]) }
+if arguments.isEmpty {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    let delegate = MenuBarApp()
+    app.delegate = delegate
+    withExtendedLifetime(delegate) { app.run() }
+    exit(0)
+}
 guard listing || device != nil else {
     print("Usage: hid-switcher-companion list | check | permissions | run --device UUID")
     exit(2)
