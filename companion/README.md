@@ -56,13 +56,12 @@ Uninstall removes the LaunchAgent and retains the app. These commands do not cha
 ## Behavior
 
 - Move the pointer away from an edge once after connecting or switching to arm the feature.
-- Push outward for at least 120 ms and 24 mouse counts. The threshold depends on mouse sensitivity.
+- The first outward mouse movement at an edge switches input. There is no dwell timer or movement threshold.
 - A switch has an 800 ms cooldown. Resting at an edge does not switch.
 - Shared monitor boundaries do not switch computers. Exposed left and right desktop edges do.
-- If the receiving Mac has a companion, it places the pointer just inside the opposite edge at a similar vertical position. Otherwise the pointer stays where it was. Gaps and different monitor sizes map to the nearest display.
-- Input switches immediately. Pointer placement is optional and never delays or cancels the switch.
+- The destination pointer stays where it was. No reposition request or acknowledgment is sent.
 - Held keys, dragging, and the device setup menu disable switching. Sleep, inactive sessions, missing permissions, and stale companion reports disable the feature as well.
 
-The firmware remains responsible for keyboard and mouse input. The companion sends edge/drag state and normalized pointer height; it does not send keypresses, screen content, or application names.
+The firmware remains responsible for keyboard and mouse input. The companion sends edge/drag state; it does not send keypresses, screen content, or application names.
 
 This feature requires hardware testing across the participating computers. The host tests cover edge detection and protocol/state behavior; they do not establish end-to-end latency.

@@ -40,7 +40,7 @@ Cmd means Command on macOS or Windows/Super on other keyboards. Left and right m
 
 ## Switch at the edge of the screen
 
-An optional [macOS companion](companion/README.md) lets you push the pointer against the right edge to select the next computer, or the left edge to select the previous one. Install it on each Mac from which you want to switch at a screen edge. Disconnected computers are skipped. Switching does not require a companion on the destination; if one is running, it also places the pointer at the opposite edge.
+An optional [macOS companion](companion/README.md) lets you push the pointer against the right edge to select the next computer, or the left edge to select the previous one. Install it on each Mac from which you want to switch at a screen edge. Disconnected computers are skipped. Switching does not require a companion on the destination. The first outward movement at an edge switches input; the destination pointer stays where it was.
 
 Shared monitor boundaries stay on the same computer. Dragging, held keys, and the setup menu disable edge switching. Keyboard and mouse shortcuts remain available.
 

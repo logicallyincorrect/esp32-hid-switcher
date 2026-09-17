@@ -25,7 +25,7 @@ final class Companion: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
     private var observers: [NSObjectProtocol] = []
     private var lastWrite: TimeInterval = 0, lastStatus: TimeInterval = 0, lastDiscovery: TimeInterval = -10
     private var writing = false, writeStarted: TimeInterval = 0
-    private var lastPacket = Data(), lastWarpEpoch: UInt32?
+    private var lastPacket = Data()
     private var systemAwake = true, screensAwake = true, sessionActive = true
     private var inhibitUntil: TimeInterval = 0
     private var desktop = geometry(), lastLayout: TimeInterval = 0
@@ -72,7 +72,7 @@ final class Companion: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
     }
     private func clear() {
         peripheral = nil; sample = nil; statusCharacteristic = nil; status = nil
-        writing = false; lastPacket = Data(); lastWarpEpoch = nil
+        writing = false; lastPacket = Data()
     }
     private func discover() {
         guard central.state == .poweredOn, peripheral == nil else { return }
@@ -134,23 +134,13 @@ final class Companion: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
         lastStatus = now
         if status?.selected != next.selected { log("Selected computer \(next.selected + 1); this computer is slot \(next.slot + 1).") }
         status = next
-        if next.warp && next.epoch != lastWarpEpoch {
-            // Fail closed: acknowledge only after successful placement on an awake host.
-            guard enabled, !dragging(), let point = desktop.landing(edge: next.entry, height: next.height),
-                  CGWarpMouseCursorPosition(point) == .success,
-                  let actual = CGEvent(source: nil)?.location,
-                  abs(actual.x - point.x) <= 2, abs(actual.y - point.y) <= 2 else { send(force: true, deny: true); return }
-            lastWarpEpoch = next.epoch
-        }
         send(force: true)
     }
-    private func send(force: Bool = false, deny: Bool = false) {
+    private func send(force: Bool = false) {
         guard let peripheral, peripheral.state == .connected, let sample, let status, !writing else { return }
         guard let point = CGEvent(source: nil)?.location else { return }
-        let active = enabled && !deny && (!status.warp || lastWarpEpoch == status.epoch)
-        let edge = status.warp && lastWarpEpoch == status.epoch ? UInt8(0) : desktop.edge(at: point)
-        let packet = edgeSample(edge: edge, dragging: dragging(), enabled: active,
-                                height: desktop.normalizedY(point), epoch: status.epoch)
+        let packet = edgeSample(edge: desktop.edge(at: point), dragging: dragging(), enabled: enabled,
+                                epoch: status.epoch)
         // Interior coordinates need only a heartbeat; send edge/drag transitions promptly.
         let changed = lastPacket.count != 12 || packet[1] != lastPacket[1] || packet[2] != lastPacket[2] || packet[6..<10] != lastPacket[6..<10]
         guard force || changed || now - lastWrite >= 0.2 else { return }
@@ -161,7 +151,6 @@ final class Companion: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
         guard peripheral === self.peripheral else { return }
         writing = false
         if let error { failed("Edge write failed: \(error.localizedDescription)") }
-        else if status?.warp == true { send() }
     }
     private func tick() {
         if now - lastLayout >= 1 { desktop = geometry(); lastLayout = now }

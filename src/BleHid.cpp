@@ -630,12 +630,9 @@ void BleHid::serviceEdges(bool allowed){
   _edges.sync(selected(),ready,allowed,now);
   const int destination=_edges.finish(now);
   if(destination>=0){
-    const uint8_t side=_edges.entry;const uint16_t height=_edges.height;
     selectSlot(uint8_t(destination));
     _edges.sync(selected(),ready,allowed,now);
-    // Route input now. Pointer placement never gates a computer switch.
     _edgeConfigGeneration=_config.generation;
-    if(selected()==unsigned(destination))_edges.place(unsigned(destination),side,height,now);
   }
   for(auto &p:_peers){
     if(p.slot<0||p.forgetting||!p.edgeSubscribed||!p.encrypted)continue;
