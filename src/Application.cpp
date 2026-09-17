@@ -63,6 +63,7 @@ void Application::tick() {
   }
   drainInput();
   // Preserve the established cadence: consume USB first, then submit BLE once.
+  _ble.serviceEdges(!_menu.active()&&!_input.keyboardHeld&&!_input.buttons);
   _ble.flushInput();
   if (millis() - _lastStatus >= 5000) {
     _lastStatus = millis();
@@ -79,6 +80,7 @@ void Application::drainInput() {
       _input.buttons = report.movement.buttons;
       if (_menu.mouse(_input.buttons, millis())) { _input.barrier(); continue; }
       if (!_input.mouseBlocked && shortcut(true)) { _ble.releaseAll(); _input.barrier(); continue; }
+      if(_ble.edgeMouse(report.movement,report.received,_input.keyboardHeld||_input.mouseBlocked))continue;
       report.movement.buttons = _input.forwardedButtons();
       _ble.sendMouseReport(report.movement, report.received);
     } else {

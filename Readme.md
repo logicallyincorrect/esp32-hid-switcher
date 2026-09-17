@@ -26,7 +26,7 @@ pio device list
 pio run -t upload --upload-port YOUR_UART_PORT
 ```
 
-All firmware updates use USB. There is no Wi-Fi, web page, or configuration application. The existing partition layout remains compatible with saved settings. Do not erase flash unless you want to remove pairings and settings.
+All firmware updates use USB. There is no Wi-Fi or web configuration page. An optional macOS companion adds pointer-edge switching; setup remains on the device. The existing partition layout remains compatible with saved settings. Do not erase flash unless you want to remove pairings and settings.
 
 ## Connect computers
 
@@ -37,6 +37,14 @@ All firmware updates use USB. There is no Wi-Fi, web page, or configuration appl
 5. Repeat for slot 3, if necessary.
 
 Cmd means Command on macOS or Windows/Super on other keyboards. Left and right modifier keys have the same function.
+
+## Switch at the edge of the screen
+
+An optional [macOS companion](companion/README.md) lets you push the pointer against the right edge to select the next computer, or the left edge to select the previous one. Install it on each participating Mac. It places the pointer at the opposite edge on arrival and skips computers without an active companion.
+
+Shared monitor boundaries stay on the same computer. Dragging, held keys, and the setup menu disable edge switching. Keyboard and mouse shortcuts remain available.
+
+This feature requires the companion and updated firmware. Hardware validation is pending.
 
 ## Configure the device
 

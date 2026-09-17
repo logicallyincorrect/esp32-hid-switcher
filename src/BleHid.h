@@ -14,6 +14,7 @@
 #include "DeviceName.h"
 #include "ShortcutBindings.h"
 #include "ReconnectGuard.h"
+#include "EdgeSwitch.h"
 
 class BleHid : public NimBLEServerCallbacks, public NimBLECharacteristicCallbacks {
 public:
@@ -23,6 +24,8 @@ public:
   void begin(uint8_t slot);
   void loop();
   void flushInput();
+  bool edgeMouse(const MouseReport &report,uint32_t received,bool blocked);
+  void serviceEdges(bool allowed);
 
   const String &deviceName() const { return _deviceName; }
   bool setDeviceName(const String &name);
@@ -51,7 +54,7 @@ public:
   bool configure(const uint8_t order[3], const char names[3][33], uint32_t generation);
   void releaseAll() { _pendingMouse.clear(); _pendingKeyboard.clear(); _router.releaseAll(); }
 private:
-  enum Kind : uint8_t { Connected, Authenticated, Disconnected, Subscribed, TimingUpdated };
+  enum Kind : uint8_t { Connected, Authenticated, Disconnected, Subscribed, TimingUpdated, EdgeSample, EdgeSubscription };
   struct Event {
     Kind kind;
     uint16_t handle;
@@ -60,6 +63,8 @@ private:
     bool bonded;
     uint16_t subscription;
     uint8_t reportId;
+    EdgeProtocol::Sample edge = {};
+    uint32_t received = 0;
   };
   struct Peer {
     uint16_t handle = MultiHostRouter::NONE;
@@ -72,6 +77,8 @@ private:
     ReconnectGuard recovery;
     uint32_t lastSubscriptionCheck=0;
     bool intervalAttempted=false;
+    bool edgeSubscribed=false;
+    uint32_t edgeSentEpoch=0,edgeSentAt=0;
   };
   MousePending _pendingMouse;
   ReportSpacing _mouseArrivalSpacing,_mouseSubmissionSpacing;
@@ -108,6 +115,10 @@ private:
   NimBLECharacteristic *_input = nullptr;
   NimBLECharacteristic *_mouse = nullptr;
   MultiHostRouter _router;
+  EdgeSwitch _edges;
+  uint32_t _edgeConfigGeneration=0;
+  NimBLECharacteristic *_edgeSample=nullptr,*_edgeStatus=nullptr;
+  void onWrite(NimBLECharacteristic *,NimBLEConnInfo &) override;
   uint32_t _lastAdvertise = 0;
   void enqueue(Kind kind, const NimBLEConnInfo &info, uint16_t sub = 0, uint8_t reportId=1);
   void handle(const Event &event);
@@ -120,6 +131,7 @@ private:
   void onDisconnect(NimBLEServer *, NimBLEConnInfo &info, int) override { enqueue(Disconnected, info); }
   void onAuthenticationComplete(NimBLEConnInfo &info) override { enqueue(Authenticated, info); }
   void onSubscribe(NimBLECharacteristic *characteristic, NimBLEConnInfo &info, uint16_t sub) override {
-    enqueue(Subscribed, info, sub, characteristic==_mouse?2:1);
+    if(characteristic==_edgeStatus)enqueue(EdgeSubscription,info,sub);
+    else enqueue(Subscribed, info, sub, characteristic==_mouse?2:1);
   }
 };

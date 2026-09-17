@@ -81,7 +81,15 @@ void BleHid::begin(uint8_t slot) {
   _mouse=_hid->getInputReport(2);
   _mouse->setCallbacks(this);
   _mouse->setValue(empty,7);
+  auto edgeService=_server->createService(EdgeProtocol::service);
+  _edgeSample=edgeService->createCharacteristic(EdgeProtocol::sample,NIMBLE_PROPERTY::WRITE|NIMBLE_PROPERTY::WRITE_ENC,EdgeProtocol::size);
+  _edgeStatus=edgeService->createCharacteristic(EdgeProtocol::status,NIMBLE_PROPERTY::NOTIFY);
+  _edgeSample->setCallbacks(this);_edgeStatus->setCallbacks(this);
+  _edges.epoch=esp_random()|1u;
   _server->start();
+  if(!_prefs.getBool("edge-gatt-v1",false)){
+    _server->sendServiceChangedIndication();_prefs.putBool("edge-gatt-v1",true);
+  }
   // Remove the former configuration GATT service without deleting saved bonds.
   if(!_prefs.getBool("text-menu-gatt",false)){
     _server->sendServiceChangedIndication();_prefs.putBool("text-menu-gatt",true);
@@ -97,6 +105,7 @@ void BleHid::begin(uint8_t slot) {
   auto adv = NimBLEDevice::getAdvertising();
   adv->setAppearance(HID_KEYBOARD);
   adv->addServiceUUID(_hid->getHidService()->getUUID());
+  adv->addServiceUUID(EdgeProtocol::service);
   adv->enableScanResponse(true);
   adv->setName(_deviceName.c_str());
   adv->start();
@@ -130,6 +139,7 @@ void BleHid::handle(const Event &e) {
   if((e.kind==TimingUpdated||e.kind==Disconnected)&&e.handle==_intervalProbeHandle)_intervalProbeComplete=true;
   if(e.kind==Connected||e.kind==Disconnected)_linksSettledSince=0;
   if (e.kind == Disconnected) {
+    _edges.reset(millis());
     _router.disconnect(e.handle);
     auto p = peer(e.handle);
     if(p && p->slot==int(selected())){++_connectionRevision;_pendingMouse.clear();_pendingKeyboard.clear();}
@@ -191,6 +201,16 @@ void BleHid::handle(const Event &e) {
     Serial.printf("[BLE] Authenticated slot %d\n", slot + 1);
   }
   updateReady(*p);
+  if(e.kind==EdgeSubscription||e.kind==EdgeSample){
+    // Match the live bonded identity as well as the handle (handles can be reused).
+    if(live.peer_id_addr.type!=e.identity.type||memcmp(live.peer_id_addr.val,e.identity.val,6))return;
+    // Remember CCCD restoration before authentication completes. Status delivery
+    // and samples still require the live encrypted, bonded connection.
+    if(e.kind==EdgeSubscription){p->edgeSubscribed=(e.subscription&1)!=0;p->edgeSentEpoch=0;_edges.reset(millis());}
+    else if(live.sec_state.encrypted&&live.sec_state.bonded&&p->encrypted&&p->slot>=0&&p->edgeSubscribed)
+      _edges.sample(unsigned(p->slot),e.edge,e.received,millis());
+    return;
+  }
 }
 
 
@@ -199,7 +219,7 @@ void BleHid::loop() {
 
   portENTER_CRITICAL(&_eventMux); bool overflow = _eventOverflow; _eventOverflow = false; portEXIT_CRITICAL(&_eventMux);
   if (overflow) {
-    ++_connectionRevision;
+    ++_connectionRevision;_edges.reset(millis());
     Serial.println("[BLE] Event queue overflow; disconnecting to reset routing safely");
     for (auto &p : _peers) { _router.disconnect(p.handle); p = {}; }
     xQueueReset(_events);
@@ -582,5 +602,43 @@ void BleHid::appendStatus(JsonObject out){
   for(const auto &p:_peers)if(p.handle!=MultiHostRouter::NONE){
     ble_gap_conn_desc live;if(ble_gap_conn_find(p.handle,&live)!=0)continue;
     auto link=links.add<JsonObject>();link["slot"]=p.slot;link["encrypted"]=bool(live.sec_state.encrypted);link["keyboard"]=bool(p.subscribed&1);link["mouse"]=bool(p.subscribed&2);link["interval_ms"]=live.conn_itvl*1.25;link["slave_latency"]=live.conn_latency;
+  }
+}
+
+
+void BleHid::onWrite(NimBLECharacteristic *characteristic,NimBLEConnInfo &info){
+  if(characteristic!=_edgeSample||!info.isEncrypted()||!info.isBonded())return;
+  const auto value=characteristic->getValue();
+  Event event{EdgeSample,info.getConnHandle(),*info.getIdAddress().getBase(),true,true,0,0};
+  if(!EdgeProtocol::decode(value.data(),value.size(),event.edge))return;
+  event.received=millis();
+  if(xQueueSend(_events,&event,0)!=pdTRUE){
+    portENTER_CRITICAL(&_eventMux);_eventOverflow=true;portEXIT_CRITICAL(&_eventMux);
+  }
+}
+
+bool BleHid::edgeMouse(const MouseReport &report,uint32_t received,bool blocked){
+  if(blocked){_edges.motion(0,1,millis(),millis());return false;}
+  return _edges.motion(report.x,report.buttons,millis()-(micros()-received)/1000,millis());
+}
+
+void BleHid::serviceEdges(bool allowed){
+  const uint32_t now=millis();uint8_t ready=0;
+  for(const auto &p:_peers)if(p.slot>=0&&!p.forgetting&&p.encrypted&&p.edgeSubscribed&&
+      (p.subscribed&3)==3&&connected(unsigned(p.slot)))ready|=1u<<p.slot;
+  if(_edgeConfigGeneration!=_config.generation){_edges.reset(now);_edgeConfigGeneration=_config.generation;}
+  _edges.sync(selected(),ready,allowed,now);
+  const int destination=_edges.finish(now);
+  if(destination>=0){
+    selectSlot(uint8_t(destination));
+    _edges.sync(selected(),ready,allowed,now);
+  }
+  for(auto &p:_peers){
+    if(p.slot<0||p.forgetting||!p.edgeSubscribed||!p.encrypted)continue;
+    if(p.edgeSentEpoch==_edges.epoch&&now-p.edgeSentAt<500)continue;
+    ble_gap_conn_desc live;
+    if(ble_gap_conn_find(p.handle,&live)||!live.sec_state.encrypted||!live.sec_state.bonded)continue;
+    uint8_t packet[EdgeProtocol::size];_edges.packet(unsigned(p.slot),packet);
+    if(_edgeStatus->notify(packet,sizeof(packet),p.handle)){p.edgeSentEpoch=_edges.epoch;p.edgeSentAt=now;}
   }
 }

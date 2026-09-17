@@ -16,3 +16,5 @@ cli/build/
 # Generated web header and host-test dependencies
 src/SetupPage.h
 tests/node_modules/
+
+companion/build/

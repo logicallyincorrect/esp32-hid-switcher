@@ -11,6 +11,8 @@
 | DeviceMenu, TextConsole | Menu state and paced text output |
 | InputState, UsbMice | Release barriers and mouse button state |
 | MultiHostRouter, pending queues, MouseCadence | Selected-host routing and bounded input scheduling |
+| EdgeSwitch | Fresh companion state, push threshold, cooldown, and acknowledged handoff |
+| macOS companion | Desktop edges, sleep state, and destination pointer placement |
 | Board | Pins, serial speed, and default identity |
 
 ## Task boundaries
@@ -36,3 +38,9 @@ Keep the existing NVS namespaces, record formats, partition offsets, BLE report 
 Put platform-independent behavior in small state types with host tests. Inject service references into adapters. Keep queues bounded and report callbacks short. Do not add sleeps or allocation to the normal report path.
 
 Run `sh scripts/test-host.sh`, `pio run`, and `python3 tests/partition-layout.py`. Hardware tests must also cover reconnect, setup, switching, and simultaneous keyboard/mouse input. Host tests and controller timing do not prove mouse-to-screen latency.
+
+## Edge switching
+
+The optional encrypted BLE edge service receives bounded samples through the existing event queue. `EdgeSwitch` runs only in the application loop. The companion never selects a slot directly: USB motion must meet the push threshold, and the destination must acknowledge pointer placement. Samples carry an epoch and expire after 600 ms. Reconnection, configuration, and selection changes invalidate them.
+
+The application checks held input and menu state before committing a handoff. Companion traffic is bounded to one write in flight and periodic heartbeats; it does not replace the HID data path. See [protocol](../companion/PROTOCOL.md).
