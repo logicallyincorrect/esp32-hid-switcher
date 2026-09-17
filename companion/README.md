@@ -1,8 +1,8 @@
 # Edge-switching companion
 
-The optional macOS companion switches computers when you push the pointer against the left or right edge of your desktop. Right selects the next available slot; left selects the previous slot. It skips disconnected computers and computers without a running companion.
+The optional macOS companion switches computers when you push the pointer against the left or right edge of your desktop. Right selects the next available slot; left selects the previous slot. It skips disconnected computers. The destination does not need a companion.
 
-Install it on each participating Mac. It requires macOS 13 or later, Bluetooth, Accessibility permission, and firmware with the edge service. Pair HID Switcher in macOS Bluetooth settings first. Existing shortcuts and device configuration work without this companion. No Wi-Fi or network listener is used.
+Install it on each Mac from which you want to switch at a screen edge. It requires macOS 13 or later, Bluetooth, Accessibility permission, and firmware with the edge service. Pair HID Switcher in macOS Bluetooth settings first. Existing shortcuts and device configuration work without this companion. No Wi-Fi or network listener is used.
 
 ## Open the app
 
@@ -53,8 +53,8 @@ Uninstall removes the LaunchAgent and retains the app. These commands do not cha
 - Push outward for at least 120 ms and 24 mouse counts. The threshold depends on mouse sensitivity.
 - A switch has an 800 ms cooldown. Resting at an edge does not switch.
 - Shared monitor boundaries do not switch computers. Exposed left and right desktop edges do.
-- The receiving Mac places the pointer just inside the opposite edge at a similar vertical position. Gaps and different monitor sizes map to the nearest display.
-- The switcher waits for placement acknowledgment before routing input. It cancels after 750 ms if the destination does not respond.
+- If the receiving Mac has a companion, it places the pointer just inside the opposite edge at a similar vertical position. Otherwise the pointer stays where it was. Gaps and different monitor sizes map to the nearest display.
+- Input switches immediately. Pointer placement is optional and never delays or cancels the switch.
 - Held keys, dragging, and the device setup menu disable switching. Sleep, inactive sessions, missing permissions, and stale companion reports disable the feature as well.
 
 The firmware remains responsible for keyboard and mouse input. The companion sends edge/drag state and normalized pointer height; it does not send keypresses, screen content, or application names.

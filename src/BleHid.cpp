@@ -624,14 +624,18 @@ bool BleHid::edgeMouse(const MouseReport &report,uint32_t received,bool blocked)
 
 void BleHid::serviceEdges(bool allowed){
   const uint32_t now=millis();uint8_t ready=0;
-  for(const auto &p:_peers)if(p.slot>=0&&!p.forgetting&&p.encrypted&&p.edgeSubscribed&&
+  for(const auto &p:_peers)if(p.slot>=0&&!p.forgetting&&p.encrypted&&
       (p.subscribed&3)==3&&connected(unsigned(p.slot)))ready|=1u<<p.slot;
   if(_edgeConfigGeneration!=_config.generation){_edges.reset(now);_edgeConfigGeneration=_config.generation;}
   _edges.sync(selected(),ready,allowed,now);
   const int destination=_edges.finish(now);
   if(destination>=0){
+    const uint8_t side=_edges.entry;const uint16_t height=_edges.height;
     selectSlot(uint8_t(destination));
     _edges.sync(selected(),ready,allowed,now);
+    // Route input now. Pointer placement never gates a computer switch.
+    _edgeConfigGeneration=_config.generation;
+    if(selected()==unsigned(destination))_edges.place(unsigned(destination),side,height,now);
   }
   for(auto &p:_peers){
     if(p.slot<0||p.forgetting||!p.edgeSubscribed||!p.encrypted)continue;

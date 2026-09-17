@@ -11,7 +11,7 @@
 | DeviceMenu, TextConsole | Menu state and paced text output |
 | InputState, UsbMice | Release barriers and mouse button state |
 | MultiHostRouter, pending queues, MouseCadence | Selected-host routing and bounded input scheduling |
-| EdgeSwitch | Fresh companion state, push threshold, cooldown, and acknowledged handoff |
+| EdgeSwitch | Fresh companion state, push threshold, cooldown, and immediate switching |
 | macOS companion | Desktop edges, sleep state, and destination pointer placement |
 | Board | Pins, serial speed, and default identity |
 
@@ -43,6 +43,6 @@ Run `sh scripts/test-host.sh`, `pio run`, and `python3 tests/partition-layout.py
 
 ## Edge switching
 
-The optional encrypted BLE edge service receives bounded samples through the existing event queue. `EdgeSwitch` runs only in the application loop. The companion never selects a slot directly: USB motion must meet the push threshold, and the destination must acknowledge pointer placement. Samples carry an epoch and expire after 600 ms. Reconnection, configuration, and selection changes invalidate them.
+The optional encrypted BLE edge service receives bounded samples through the existing event queue. `EdgeSwitch` runs only in the application loop. The companion never selects a slot directly: USB motion must meet the push threshold. Only the source needs a companion; the destination needs a ready HID connection. Pointer placement is requested after switching and never gates input routing. Samples carry an epoch and expire after 600 ms. Reconnection, configuration, and selection changes invalidate them.
 
 The application checks held input and menu state before committing a handoff. Companion traffic is bounded to one write in flight and periodic heartbeats; it does not replace the HID data path. See [protocol](../companion/PROTOCOL.md).
