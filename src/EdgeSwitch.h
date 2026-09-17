@@ -20,7 +20,7 @@ inline bool decode(const uint8_t *p,size_t n,Sample &out){
 class EdgeSwitch {
 public:
   static constexpr uint32_t freshness=600, cooldown=800;
-  static constexpr unsigned pushDistance=24;
+  static constexpr unsigned pushDistance=100;
   struct Host {EdgeProtocol::Sample sample;uint32_t received=0,edgeSince=0;bool seen=false,armed=false;};
   uint32_t epoch=1;
   unsigned selected=0;

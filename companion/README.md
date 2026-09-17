@@ -56,7 +56,7 @@ Uninstall removes the LaunchAgent and retains the app. These commands do not cha
 ## Behavior
 
 - Move the pointer away from an edge once after connecting or switching to arm the feature.
-- Push 24 relative mouse counts outward after reaching an edge. Stopping does not trigger a switch; reversing or leaving the edge clears the accumulated movement. There is no dwell timer.
+- Push 100 relative mouse counts outward after reaching an edge. Stopping does not trigger a switch; reversing or leaving the edge clears the accumulated movement. There is no dwell timer.
 - A switch has an 800 ms cooldown. Resting at an edge does not switch.
 - Shared monitor boundaries do not switch computers. Exposed left and right desktop edges do.
 - The destination pointer stays where it was. No reposition request or acknowledgment is sent.

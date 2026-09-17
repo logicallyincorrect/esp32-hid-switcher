@@ -9,13 +9,13 @@ struct Fixture {
 };
 int main(){
   // Crossing the distance threshold switches immediately, without destination samples.
-  Fixture stop;assert(!stop.e.motion(23,0,1000,1000));
+  Fixture stop;assert(!stop.e.motion(99,0,1000,1000));
   for(uint32_t t=1100;t<=3000;t+=100){stop.sample(0,2,t);assert(stop.e.finish(t)==-1);assert(!stop.e.motion(0,0,t,t));}
   assert(stop.e.motion(1,0,3000,3000));assert(stop.e.finish(3000)==1);
-  Fixture reversal;assert(!reversal.e.motion(23,0,1000,1000));assert(!reversal.e.motion(-1,0,1000,1000));assert(!reversal.e.motion(1,0,1000,1000));assert(reversal.e.motion(23,0,1000,1000));
-  Fixture leave;assert(!leave.e.motion(23,0,1000,1000));leave.sample(0,0,1000);leave.sample(0,2,1000);assert(!leave.e.motion(1,0,1000,1000));
-  Fixture held;assert(!held.e.motion(23,0,1000,1000));assert(!held.e.motion(0,1,1000,1000));assert(!held.e.motion(1,0,1000,1000));
-  Fixture slow;for(uint32_t t=1000;t<=1400;t+=200){slow.sample(0,2,t);assert(!slow.e.motion(6,0,t,t));}slow.sample(0,2,1600);assert(slow.e.motion(6,0,1600,1600));
+  Fixture reversal;assert(!reversal.e.motion(99,0,1000,1000));assert(!reversal.e.motion(-1,0,1000,1000));assert(!reversal.e.motion(1,0,1000,1000));assert(reversal.e.motion(99,0,1000,1000));
+  Fixture leave;assert(!leave.e.motion(99,0,1000,1000));leave.sample(0,0,1000);leave.sample(0,2,1000);assert(!leave.e.motion(1,0,1000,1000));
+  Fixture held;assert(!held.e.motion(99,0,1000,1000));assert(!held.e.motion(0,1,1000,1000));assert(!held.e.motion(1,0,1000,1000));
+  Fixture slow;for(uint32_t t=1000;t<=1400;t+=200){slow.sample(0,2,t);assert(!slow.e.motion(25,0,t,t));}slow.sample(0,2,1600);assert(slow.e.motion(25,0,1600,1600));
   Fixture right;assert(right.push(1000));assert(right.e.finish(1000)==1);
   // Every slot, direction and connection mask: edges never wrap around.
   for(unsigned current=0;current<3;++current)for(unsigned mask=1;mask<8;++mask){
