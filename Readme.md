@@ -44,7 +44,21 @@ Cmd means Command on macOS or Windows/Super on other keyboards. Left and right m
 
 ## Switch at the edge of the screen
 
-An experimental [companion-free absolute-pointer build](docs/absolute-pointer.md) is also available for one display per computer. It offers per-slot two-corner mouse calibration and an All option. Seamless switching is off by default; enable it through **6 Seamless switching**. The absolute build requires calibration before enabling, while the normal build uses the companion behavior below. The integrated build works on both tested computers, including absolute dragging. Calibration and seamless-off relative movement use a separate BLE HID service to avoid mixing the mouse report maps. See the linked document for calibration instructions and limitations.
+Both options provide seamless edge switching, **off by default**. Choose the firmware for the behavior you want:
+
+| | Companion-free mode | macOS companion mode |
+| --- | --- | --- |
+| Firmware environment | `esp32s3_usb_ble_absolute` | `esp32s3_usb_ble` |
+| Software on each computer | None | macOS companion on each source Mac |
+| Pointer output | Absolute when enabled and calibrated; relative otherwise | Relative |
+| Setup | Enable in menu; calibrate each slot or choose All | Install companion, then enable in menu |
+| Screen information | Two-corner calibration, one display per computer | Companion reports desktop edges; shared monitor boundaries stay on the same computer |
+| Pointer after switching | Opposite edge, retaining normalized vertical position | Destination pointer stays where it was |
+| Mouse controls | Five buttons and vertical scroll in absolute mode | Eight buttons and horizontal/vertical scroll |
+
+Both use slots 1 → 2 → 3 from left to right, skip disconnected computers, and do not wrap at an outer edge. Dragging, held keys and configuration block automatic switching. Keyboard/mouse switching shortcuts work in either mode.
+
+For companion-free mode, select **6 Seamless switching → 1 Enable**. Missing calibration starts the two-corner procedure before switching can turn on. Recalibrate one slot or all connected computers through **6 → 3 Calibrate pointer**. The integrated build works on both tested computers, including absolute dragging. See [calibration instructions and limitations](docs/absolute-pointer.md).
 
 Download the companion ZIP from [Releases](https://github.com/logicallyincorrect/esp32-hid-switcher/releases), or get a development build from [Actions](https://github.com/logicallyincorrect/esp32-hid-switcher/actions/workflows/companion-macos.yml). See [build and installation instructions](companion/README.md).
 
