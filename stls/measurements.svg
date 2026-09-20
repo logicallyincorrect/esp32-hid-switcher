@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="760" viewBox="0 0 1100 760">
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 Z" fill="#c75b25"/></marker></defs>
+<rect width="1100" height="760" fill="#f7f9fa"/>
+<g font-family="Arial,sans-serif" fill="#233c46">
+<text x="40" y="45" font-size="27" font-weight="bold">Freenove case — measurement guide</text>
+<text x="40" y="75" font-size="16">Illustrative layout only. All measurements in mm. Unplug the board before using metal calipers.</text>
+<text x="120" y="112" font-size="19" font-weight="bold">TOP VIEW · USB ports toward you</text>
+<rect x="150" y="205" width="224" height="350" fill="#c6d8d5" stroke="#233c46" stroke-width="2"/>
+<rect x="190" y="145" width="144" height="200" fill="#8a9a9c" stroke="#233c46"/>
+<rect x="190" y="145" width="144" height="60" fill="#344d54"/>
+<text x="215" y="182" fill="white" font-size="15">antenna</text>
+<rect x="157" y="211" width="14" height="337" fill="#526970"/>
+<rect x="353" y="211" width="14" height="337" fill="#526970"/>
+<rect x="179" y="432" width="27" height="36" fill="#eee" stroke="#233c46"/>
+<rect x="318" y="432" width="27" height="36" fill="#eee" stroke="#233c46"/>
+<circle cx="192.5" cy="450" r="8" fill="#233c46"/>
+<circle cx="331.5" cy="450" r="8" fill="#233c46"/>
+<text x="174" y="423" font-size="14">RESET</text><text x="313" y="423" font-size="14">BOOT</text>
+<rect x="181" y="502" width="67" height="60" rx="6" fill="#a7b3bb" stroke="#233c46"/>
+<rect x="276" y="502" width="67" height="60" rx="6" fill="#a7b3bb" stroke="#233c46"/>
+<g stroke="#c75b25" fill="none" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)">
+<path d="M150 612 H374"/><path d="M101 205 V555"/><path d="M441 145 V555"/>
+<path d="M150 482 H331.5"/><path d="M399 555 V450"/>
+</g>
+<g stroke="#c75b25" stroke-width="1" stroke-dasharray="4 4" fill="none">
+<path d="M150 555 V623 M374 555 V623 M92 205 H150 M92 555 H451 M334 145 H451 M331.5 450 V487 M192.5 450 V487 M331.5 450 H405"/>
+</g>
+<text x="199" y="639" font-size="17">A · PCB width</text>
+<text transform="translate(80 450) rotate(-90)" font-size="17">B · main PCB length</text>
+<text transform="translate(466 480) rotate(-90)" font-size="17">C · length including antenna</text>
+<text x="228" y="477" font-size="15" fill="#b34c1c">X</text>
+<text x="409" y="510" font-size="15" fill="#b34c1c">Y</text>
+<circle cx="150" cy="555" r="5" fill="#c75b25"/>
+<path d="M146 560 L108 582 H42" stroke="#c75b25" fill="none"/>
+<text x="40" y="601" font-size="15">Origin (0, 0)</text>
+<text x="120" y="676" font-size="16">X: from LEFT PCB edge to button/port centre.</text>
+<text x="120" y="701" font-size="16">Y: from USB-end PCB edge toward the antenna.</text>
+<text x="120" y="726" font-size="16">Use the PCB edge, not the protruding USB metal.</text>
+<text x="586" y="112" font-size="19" font-weight="bold">SIDE VIEW · height reference surfaces</text>
+<rect x="613" y="355" width="395" height="14" fill="#c6d8d5" stroke="#233c46"/>
+<rect x="690" y="323" width="57" height="32" fill="#a7b3bb" stroke="#233c46"/>
+<rect x="818" y="341" width="33" height="14" fill="#526970"/>
+<rect x="822" y="331" width="25" height="10" fill="#233c46"/>
+<rect x="902" y="313" width="85" height="42" fill="#8a9a9c" stroke="#233c46"/>
+<rect x="635" y="369" width="340" height="24" fill="#526970"/>
+<g stroke="#a18949" stroke-width="5"><path d="M648 393 V449 M675 393 V449 M702 393 V449 M729 393 V449 M756 393 V449 M783 393 V449 M810 393 V449 M837 393 V449 M864 393 V449 M891 393 V449 M918 393 V449 M945 393 V449"/></g>
+<g stroke="#c75b25" stroke-width="1.5" fill="none" marker-start="url(#arrow)" marker-end="url(#arrow)">
+<path d="M1028 355 V369"/><path d="M603 369 V449"/><path d="M866 331 V355"/>
+</g>
+<text x="1008" y="341" font-size="14">PCB thickness</text>
+<text x="592" y="474" font-size="15">Underside of PCB → pin tips</text>
+<path d="M867 333 L891 265" stroke="#c75b25" fill="none"/>
+<text x="685" y="237" font-size="16">PCB top → unpressed button top</text>
+<text x="685" y="259" font-size="14">This sets the actuator peg length.</text>
+<text x="586" y="526" font-size="17" font-weight="bold">Also measure:</text>
+<text x="586" y="554" font-size="16">• PCB underside → bottom of black header plastic</text>
+<text x="586" y="581" font-size="16">• Header row centre-to-centre spacing</text>
+<text x="586" y="608" font-size="16">• PCB top → tallest component</text>
+<text x="586" y="635" font-size="16">• Each USB shell: width, height, forward protrusion</text>
+<text x="586" y="678" font-size="15">A top and side photo help confirm the measurements.</text>
+<text x="586" y="702" font-size="15">Button positions and heights: aim for ±0.1–0.2 mm.</text>
+</g></svg>
