@@ -27,6 +27,7 @@ private:
   QueueHandle_t _reports = nullptr;
   portMUX_TYPE _queueLock = portMUX_INITIALIZER_UNLOCKED;
   bool _overflow = false;
+  bool _calibrationBootRelease=false;
   uint8_t _slot = 0;
   uint32_t _epoch = 0, _previousLoop = 0, _maxLoopGap = 0, _maxMenu = 0, _lastStatus = 0;
   uint32_t _previousColor = 0xffffffff;

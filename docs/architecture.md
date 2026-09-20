@@ -12,6 +12,8 @@
 | InputState, UsbMice | Release barriers and mouse button state |
 | MultiHostRouter, pending queues, MouseCadence | Selected-host routing and bounded input scheduling |
 | EdgeSwitch | Fresh companion state, cooldown, and immediate switching |
+| AbsolutePointer, PointerTuning | Per-slot absolute position, calibrated axis scaling and companion-free switching |
+| PointerCalibration, CalibrationFeedback | Two-corner captures, origin-host results and configuration return |
 | macOS companion | Desktop edges and sleep state |
 | Board | Pins, serial speed, and default identity |
 
@@ -19,7 +21,7 @@
 
 The application loop owns settings, BLE routing, and the menu. BLE callbacks copy events into a bounded queue. USB callbacks copy input into a separate bounded queue. Callbacks do not write settings or run the menu.
 
-The USB host task services the controller. The HID driver task receives reports. A connection worker opens interfaces and reads descriptors. A short lock protects USB interface and mouse state. No driver call, output callback, or serial write runs under that lock.
+The USB host task services the controller and executes root-port recovery after event dispatch; the application loop only requests recovery. The HID driver task receives reports. A connection worker opens interfaces and reads descriptors. A short lock protects USB interface and mouse state. No driver call, output callback, or serial write runs under that lock.
 
 Startup retains a one-second settling interval before USB installation. An interface-open failure is reported without resetting the bus: an optional interface can exceed the controller channel limit while keyboard and mouse input remain active. Transfer failures still use the bounded recovery policy.
 
@@ -33,13 +35,13 @@ Only the selected host receives normal input. Switching releases held input. Men
 
 ## Persistence and compatibility
 
-Keep the existing NVS namespaces, record formats, partition offsets, BLE report map, and GATT identity. Renaming a source file must not require pairing again. Pairing removal uses a saved pending marker so startup can complete an interrupted removal.
+Preserve existing NVS namespaces, partition offsets and bonded identities. Version new settings records and HID layouts explicitly; request GATT Service Changed when a report map or service layout changes, without erasing pairings or calibration. Renaming a source file must not require pairing again. Pairing removal uses a saved pending marker so startup can complete an interrupted removal.
 
 ## Changes and validation
 
 Put platform-independent behavior in small state types with host tests. Inject service references into adapters. Keep queues bounded and report callbacks short. Do not add sleeps or allocation to the normal report path.
 
-Run `sh scripts/test-host.sh`, `pio run`, and `python3 tests/partition-layout.py`. Hardware tests must also cover reconnect, setup, switching, and simultaneous keyboard/mouse input. Host tests and controller timing do not prove mouse-to-screen latency.
+Run `sh scripts/test-host.sh`, `pio run -e esp32s3_usb_ble -e esp32s3_usb_ble_absolute`, and `python3 tests/partition-layout.py`. Hardware tests must also cover reconnect, setup, switching, and simultaneous keyboard/mouse input. Host tests and controller timing do not prove mouse-to-screen latency.
 
 ## Edge switching
 
@@ -48,3 +50,9 @@ The optional encrypted BLE edge service receives bounded samples through the exi
 The application checks held input and menu state before committing a handoff. Companion traffic is bounded to one write in flight and periodic heartbeats; it does not replace the HID data path. See [protocol](../companion/PROTOCOL.md).
 
 The edge distance is one NVS unsigned integer (`edge-distance`) in the existing settings namespace. Values outside 1-10000 are rejected. A save must succeed before the runtime threshold changes; updating it clears pending edge motion. Missing or invalid stored values use 100.
+
+## Companion-free absolute pointer
+
+The absolute build exposes two HID services with independent report maps. The primary service contains keyboard report 1 and six-byte absolute mouse report 2 (five buttons, X/Y and vertical wheel). The second service contains relative report 3 for calibration and seamless-off movement. Device Information is shared. Normal gestures use exactly one mouse path; absolute clicks, drags and wheel events are never mirrored onto the relative service. This replaces the combined mouse map that caused macOS to release held clicks during absolute movement.
+
+Seamless switching is opt-in and requires calibrated connected slots. Calibration measures raw movement while sending relative output, suppresses marking clicks, persists per-bonded-host spans, and returns to the origin host for feedback and the normal menu. The primary absolute report uses the NanoKVM-style descriptor validated on both user computers. See [calibration and transport details](absolute-pointer.md) for limitations and the diagnostic fallback.

@@ -58,6 +58,14 @@ public:
   }
   bool paired(unsigned slot){return _ble.config().slots[slot].assigned!=0;}
   std::string forget(unsigned slot){return _ble.forgetComputer(slot).c_str();}
+  unsigned calibrationReady(){return _ble.calibrationReady();}
+  bool beginCalibration(unsigned mask,bool enableAfter){return _ble.beginCalibration(mask,enableAfter);}
+  bool seamlessEnabled(){return _ble.seamlessEnabled();}
+  bool setSeamlessEnabled(bool value){return _ble.setSeamlessEnabled(value);}
+  unsigned calibrationNeeded(){return _ble.calibrationNeeded();}
+  bool absoluteMode(){return _ble.absoluteMode();}
+  unsigned pointerValue(unsigned slot,unsigned field){return _ble.pointerValue(slot,field);}
+  bool setPointerValue(unsigned slot,unsigned field,unsigned value){return _ble.setPointerValue(slot,field,value);}
   unsigned edgeThreshold(){return _ble.edgeThreshold();}
   bool setEdgeThreshold(unsigned value){return _ble.setEdgeThreshold(value);}
   bool renameDevice(const std::string &name){return _ble.setDeviceName(name.c_str());}

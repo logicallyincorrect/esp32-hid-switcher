@@ -5,5 +5,7 @@
 - Test three simultaneous hosts and Windows/Linux reconnection behavior.
 - Explore vendor HID/HID++ passthrough so mouse configuration software can communicate with the original device. Advertising vendor IDs alone is insufficient.
 - Investigate mouse hardware settings only after detecting supported vendor features; do not assume Motion Sync or configurable polling rate.
-- Per-host mouse settings, configuration backup/restore, and additional LED feedback.
+- Configuration backup/restore and additional LED feedback; per-host axis tuning and calibration are implemented.
+- Extend the validated absolute mouse layout with horizontal pan and buttons 6–8 without regressing macOS dragging.
+- Validate physical USB hub unplug/replug recovery; successful startup and software recovery are not sufficient proof.
 - Additional host keyboard layouts and Unicode names in the device menu.

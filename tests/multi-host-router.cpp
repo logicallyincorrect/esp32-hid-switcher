@@ -56,4 +56,15 @@ int main() {
   keyTransport.fail=0xffff;assert(keyRouter.tryKeyboard(key));
   assert(keyTransport.sent.size()==1&&keyTransport.sent[0].handle==70&&keyTransport.sent[0].report[2]==4);
   keyRouter.select(1);assert(!keyRouter.tryKeyboard(key));
+  // Relative mode must not emit absolute neutral reports and teleport the cursor.
+  Transport dual;MultiHostRouter modes(Transport::send,&dual,true);modes.absoluteOutput(false);
+  modes.connect(0,80);modes.ready(0,true,7);modes.service();
+  for(const auto &packet:dual.sent)assert(packet.id!=2);
+  assert(modes.tryRelativeMouse(mouse));modes.absoluteOutput(true);
+  uint8_t heldAbsolute[7]={1,10,20,30,40,0,0};assert(modes.tryMouse(heldAbsolute));
+  dual.fail=80;modes.releaseAll();modes.absoluteOutput(false);dual.fail=0xffff;dual.sent.clear();modes.service();
+  bool releasedAbsolute=false;
+  for(const auto &packet:dual.sent)if(packet.id==2){releasedAbsolute=true;assert(!packet.report[0]&&packet.report[1]==10);}
+  assert(releasedAbsolute); // failed old-mode button release must survive a mode change
+  modes.ready(0,true,3);modes.service();assert(!modes.tryRelativeMouse(mouse));
 }

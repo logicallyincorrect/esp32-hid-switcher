@@ -3,6 +3,7 @@
 #include "BootHealth.h"
 #include "DeviceShortcut.h"
 #include "RuntimeHealth.h"
+#include "UsbControlDiagnostics.h"
 #include <esp_log.h>
 #include <esp32-hal-rgb-led.h>
 
@@ -24,6 +25,7 @@ void Application::begin() {
 }
 
 void Application::discardInput(bool uncertain) {
+  _ble.cancelCalibration(true);
   xQueueReset(_reports);
   _ble.releaseAll();
   _input.barrier(uncertain);
@@ -38,13 +40,16 @@ void Application::tick() {
   _ble.loop();
   serviceBootHealth(_usb.healthy());
   const bool wasMenu = _menu.active();
-  _menu.button(digitalRead(Board::setupButton) == LOW, millis());
+  const bool bootDown=digitalRead(Board::setupButton)==LOW;
+  if(_ble.calibrationActive()&&bootDown){_ble.cancelCalibration();_calibrationBootRelease=true;}
+  if(!bootDown)_calibrationBootRelease=false;
+  if(!_ble.calibrationActive()&&!_calibrationBootRelease)_menu.button(bootDown,millis());
   const uint32_t menuStarted = micros();
   _menu.tick(millis());
   const uint32_t menuTime = micros() - menuStarted;
   if (menuTime > _maxMenu) _maxMenu = menuTime;
   if (wasMenu != _menu.active()) _input.barrier();
-  if (_epoch != _ble.inputEpoch()) { _epoch = _ble.inputEpoch(); discardInput(true); }
+  if (_epoch != _ble.inputEpoch()) { _epoch = _ble.inputEpoch(); xQueueReset(_reports);if(!_ble.calibrationActive())_ble.releaseAll();_input.barrier(true); }
   if (_slot != _ble.selected()) {
     _slot = _ble.selected();
     xQueueReset(_reports);
@@ -65,6 +70,12 @@ void Application::tick() {
   // Preserve the established cadence: consume USB first, then submit BLE once.
   _ble.serviceEdges(!_menu.active()&&!_input.keyboardHeld&&!_input.buttons);
   _ble.flushInput();
+  // Final calibration feedback has drained on its original connection. Resume
+  // setup immediately so edge switching stays blocked between the two flows.
+  if(_ble.takeCalibrationMenuReturn()){
+    _menu.resume(millis(),_input.keys,_input.modifiers,_input.buttons);
+    _input.barrier();
+  }
   if (millis() - _lastStatus >= 5000) {
     _lastStatus = millis();
     _ble.printStatus();
@@ -78,6 +89,7 @@ void Application::drainInput() {
   while (xQueueReceive(_reports, &report, 0) == pdTRUE) {
     if (report.mouse) {
       _input.buttons = report.movement.buttons;
+      if(_ble.calibrationActive()){_ble.calibrationMouse(report.movement,report.received);_input.barrier();continue;}
       if (_menu.mouse(_input.buttons, millis())) { _input.barrier(); continue; }
       if (!_input.mouseBlocked && shortcut(true)) { _ble.releaseAll(); _input.barrier(); continue; }
       if(_ble.edgeMouse(report.movement,report.received,_input.keyboardHeld||_input.mouseBlocked))continue;
@@ -85,6 +97,10 @@ void Application::drainInput() {
       _ble.sendMouseReport(report.movement, report.received);
     } else {
       _input.keyboard(report.bytes);
+      if(_ble.calibrationActive()){
+        for(auto key:_input.keys)if(key==41&&!_input.modifiers){_ble.cancelCalibration();break;}
+        _input.barrier();continue;
+      }
       if (_menu.keyboard(_input.keys, _input.modifiers, millis())) { _input.barrier(); continue; }
       if (_input.consumeKeyboard()) continue;
       if (shortcut(false)) { _input.keyboardBlocked = true; _ble.releaseAll(); continue; }
@@ -115,7 +131,8 @@ void Application::indicators() {
   if (Board::slotLed >= 0) digitalWrite(Board::slotLed, phase < (_slot + 1) * 300u && phase % 300 < 120);
   const bool lit = _ble.isConnected() || now % 1000 < 350;
   const uint32_t colors[] = {0x000018, 0x001800, 0x140014};
-  const uint32_t color = _menu.active() ? 0x101000 : lit ? colors[_slot] : 0;
+  const uint32_t calibrationColor=_ble.calibrationColor(now);
+  const uint32_t color = calibrationColor!=0xffffffff?calibrationColor:_menu.active() ? 0x101000 : lit ? colors[_slot] : 0;
   if (Board::rgbLed >= 0 && color != _previousColor) {
     rgbLedWrite(Board::rgbLed, (color >> 16) & 255, (color >> 8) & 255, color & 255);
     _previousColor = color;
@@ -126,8 +143,9 @@ void Application::serialCommands() {
   while (Serial.available()) {
     const char command = Serial.read();
     if (command >= '1' && command <= '3') {
-      _menu.cancel(); _input.barrier(); select(command - '1');
+      _ble.cancelCalibration();_menu.cancel(); _input.barrier(); select(command - '1');
     } else if (command == 'u') _usb.requestRecovery();
+    else if (command == 'v') toggleUsbDiagnostics();
     else if (command == '?') { _ble.printStatus(); _usb.printDiagnostics(); }
   }
 }

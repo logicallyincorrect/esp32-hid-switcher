@@ -39,10 +39,11 @@ private:
   TaskHandle_t _starter = nullptr;
   uint32_t _usbHeartbeat = 0, _hidHeartbeat = 0;
   uint32_t _transferErrors = 0, _openErrors = 0, _eventDrops = 0;
-  bool _fault = false, _portOff = false;
+  bool _fault = false, _portOff = false, _resetRequested = false;
   uint32_t _portOffAt = 0;
   RecoveryPolicy _recovery;
   void fault();
+  void servicePortRecovery();
   void track(hid_host_device_handle_t handle, const hid_host_dev_params_t &params, bool active);
   void open(hid_host_device_handle_t handle);
   void input(hid_host_device_handle_t handle, hid_host_interface_event_t event);

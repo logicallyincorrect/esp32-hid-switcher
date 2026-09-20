@@ -9,8 +9,8 @@ int __real_ble_hs_hci_evt_process(struct ble_hci_ev *ev);
 }
 static ControllerTracker tracker;
 static portMUX_TYPE trackerMux=portMUX_INITIALIZER_UNLOCKED;
-static uint16_t keyboardAttribute=0xffff,mouseAttribute=0xffff;
-void ControllerDiagnostics::reports(uint16_t keyboard,uint16_t mouse){portENTER_CRITICAL(&trackerMux);keyboardAttribute=keyboard;mouseAttribute=mouse;portEXIT_CRITICAL(&trackerMux);}
+static uint16_t keyboardAttribute=0xffff,mouseAttribute=0xffff,relativeMouseAttribute=0xffff;
+void ControllerDiagnostics::reports(uint16_t keyboard,uint16_t mouse,uint16_t relativeMouse){portENTER_CRITICAL(&trackerMux);keyboardAttribute=keyboard;mouseAttribute=mouse;relativeMouseAttribute=relativeMouse;portEXIT_CRITICAL(&trackerMux);}
 extern "C" int __wrap_ble_hs_tx_data(struct os_mbuf *om){
   uint8_t header[11]{};const unsigned length=OS_MBUF_PKTLEN(om);
   const bool valid=length>=4&&os_mbuf_copydata(om,0,length<11?length:11,header)==0;
@@ -21,7 +21,7 @@ extern "C" int __wrap_ble_hs_tx_data(struct os_mbuf *om){
   const uint16_t l2length=header[4]|uint16_t(header[5])<<8;
   if(valid&&length>=11&&(header[1]&0x30)!=0x10&&header[6]==4&&header[7]==0&&header[8]==0x1b&&payload==l2length+4){
     const uint16_t attr=header[9]|uint16_t(header[10])<<8;
-    portENTER_CRITICAL(&trackerMux);kind=attr==mouseAttribute?2:attr==keyboardAttribute?1:0;portEXIT_CRITICAL(&trackerMux);
+    portENTER_CRITICAL(&trackerMux);kind=(attr==mouseAttribute||attr==relativeMouseAttribute)?2:attr==keyboardAttribute?1:0;portEXIT_CRITICAL(&trackerMux);
   }
   const uint32_t submitted=micros();
   const int rc=__real_ble_hs_tx_data(om);

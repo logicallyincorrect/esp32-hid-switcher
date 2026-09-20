@@ -1,17 +1,19 @@
 #pragma once
 #include "TextConsole.h"
 #include "EdgeSettings.h"
+#include "PointerTuning.h"
 #include <string.h>
 
 // Platform-independent state machine. Backend owns settings and BLE transport.
 template<class Backend> class DeviceMenu {
   enum Page { Main,Computers,RenameSlot,RenameText,RenameConfirm,MoveFrom,MoveTo,MoveConfirm,
               SelectSlot,SelectDrain,ForgetSlot,ForgetConfirm,ForgetDrain,Actions,Binding,RecordArming,Recording,RecordConfirm,
-              ClearConfirm,ResetConfirm,NameText,NameConfirm,EdgeText,EdgeConfirm };
+              ClearConfirm,ResetConfirm,NameText,NameConfirm,EdgeText,EdgeConfirm,PointerSlot,PointerField,PointerText,PointerConfirm,CalibrationSlots,CalibrationConfirm,CalibrationDrain,Seamless };
   Backend &_backend;
   TextConsole _output;
   MenuButton _button;
   Page _page=Main;
+  bool _enableAfterCalibration=false;
   bool _active=false,_released=false,_textReady=false;
   uint8_t _previous[6]={},_modifiers=0,_buttons=0;
   unsigned _host=0,_slot=0,_destination=0,_action=0,_kind=0,_edgeDistance=0;
@@ -19,7 +21,14 @@ template<class Backend> class DeviceMenu {
   std::string _name;
   void print(const std::string &text){if(!_output.append(text))close();}
   void prompt(const std::string &text){_textReady=false;print("\n"+text+(_page==Main?"":"\nESC Back")+"\n> ");}
-  void main(){_page=Main;prompt("1 Computers\n2 Shortcuts\n3 Bluetooth name\n4 Diagnostics\n5 Edge switching\nESC Exit");}
+  void main(){_page=Main;prompt(std::string("1 Computers\n2 Shortcuts\n3 Bluetooth name\n4 Diagnostics\n5 Edge switching")+"\n6 Seamless switching"+std::string(_backend.absoluteMode()?"\n7 Pointer tuning":"")+"\nESC Exit");}
+  const char *pointerLabel()const{return _kind==0?"Horizontal":"Vertical";}
+  void pointerFields(){_page=PointerField;prompt("Pointer for "+_backend.computerName(_slot)+"\n1 Horizontal: "+std::to_string(_backend.pointerValue(_slot,0))+"%\n2 Vertical: "+std::to_string(_backend.pointerValue(_slot,1))+"%\nHigher is faster. Tune each axis to match your displays.");}
+  void seamless(){_page=Seamless;prompt(std::string("Seamless switching: ")+(_backend.seamlessEnabled()?"ON":"OFF")+"\n1 Enable\n2 Disable"+(_backend.absoluteMode()?"\n3 Calibrate pointer":""));}
+  void calibrationInstructions(){_page=CalibrationConfirm;prompt("For each selected computer:\nMove to TOP LEFT, left-click and release.\nWait for TWO cyan LED flashes.\nMove smoothly to BOTTOM RIGHT, left-click and release.\nAvoid pushing beyond the edges.\nOne cyan flash = top left. Two = bottom right.\nAfter each slot, results are typed here before selecting the next slot.\nGreen = saved; amber = cancelled; red = failed. ESC or BOOT cancels.\nClicks stay local. Wheel is disabled during calibration.\nStart? y Yes / n No");}
+  void calibrationSlots(){_enableAfterCalibration=false;_page=CalibrationSlots;std::string text="Calibrate pointer:\n";const unsigned ready=_backend.calibrationReady();
+    for(unsigned i=0;i<3;++i)text+=std::to_string(i+1)+" "+_backend.computerName(i)+((ready&(1u<<i))?" [ready]\n":" [unavailable]\n");
+    prompt(text+"4 All ready computers\nUnavailable: connect first. If connected, re-pair to enable calibration.");}
   void computers(){_page=Computers;prompt(_backend.computers()+"1 Rename\n2 Move\n3 Select\n4 Forget pairing");}
   void actions(){
     _page=Actions;std::string text;
@@ -33,7 +42,11 @@ template<class Backend> class DeviceMenu {
     _backend.cancelRecord();_backend.release();_output.clear();_name.clear();_textReady=false;
     switch(_page){
     case Main:close();break;
-    case Computers:case Actions:case NameText:case NameConfirm:case EdgeText:case EdgeConfirm:main();break;
+    case Computers:case Actions:case NameText:case NameConfirm:case EdgeText:case EdgeConfirm:case PointerSlot:case Seamless:main();break;
+    case CalibrationSlots:seamless();break;
+    case CalibrationConfirm:case CalibrationDrain:calibrationSlots();break;
+    case PointerField:_page=PointerSlot;prompt("Tune which paired computer?\n"+_backend.computers());break;
+    case PointerText:case PointerConfirm:pointerFields();break;
     case RenameSlot:computers();break;
     case RenameText:case RenameConfirm:_page=RenameSlot;prompt("Rename slot:\n"+_backend.computers());break;
     case MoveFrom:case SelectSlot:case SelectDrain:case ForgetSlot:computers();break;
@@ -46,9 +59,13 @@ template<class Backend> class DeviceMenu {
   static unsigned number(char c){return unsigned(c-'1');}
   void key(uint8_t code,uint8_t mods){
     char c=inputCharacter(code,mods);
-    if(_page==RenameText||_page==NameText||_page==EdgeText){
+    if(_page==RenameText||_page==NameText||_page==EdgeText||_page==PointerText){
       if(code==42&&mods==0){if(!_name.empty()){_name.pop_back();print("\b");}return;}
       if(code==40&&mods==0){
+        if(_page==PointerText){
+          if(!PointerTuning::parse(_name,_kind,_edgeDistance)){_name.clear();prompt("Enter a whole percentage from 1 to 1600.");return;}
+          _page=PointerConfirm;prompt(std::string("Save ")+pointerLabel()+": "+std::to_string(_edgeDistance)+"%?\ny Yes\nn No");return;
+        }
         if(_page==EdgeText){
           if(!EdgeSettings::parse(_name,_edgeDistance)){_name.clear();prompt("Enter a whole number from 1 to 10000.");return;}
           _page=EdgeConfirm;prompt("Save edge distance: "+std::to_string(_edgeDistance)+" counts?\ny Yes\nn No");return;
@@ -66,7 +83,34 @@ template<class Backend> class DeviceMenu {
       if(c=='1')computers();else if(c=='2')actions();
       else if(c=='3'){_name.clear();_page=NameText;prompt("Current Bluetooth name: "+_backend.deviceName()+"\nNew name (ASCII, 29 characters). Enter to review.");}
       else if(c=='4'){prompt(_backend.diagnostics());main();}
-      else if(c=='5'){_name.clear();_page=EdgeText;prompt("Current edge distance: "+std::to_string(_backend.edgeThreshold())+" counts\nNew distance (1-10000). Higher needs more mouse movement.\nEnter to review.");}break;
+      else if(c=='5'){_name.clear();_page=EdgeText;prompt("Current edge distance: "+std::to_string(_backend.edgeThreshold())+" counts\nNew distance (1-10000). Higher needs more mouse movement.\nEnter to review.");}
+      else if(c=='6')seamless();
+      else if(c=='7'&&_backend.absoluteMode()){_page=PointerSlot;prompt("Tune which paired computer?\n"+_backend.computers());}break;
+    case Seamless:
+      if(c=='1'){
+        const unsigned needed=_backend.calibrationNeeded();
+        if(needed){
+          if(needed&~_backend.calibrationReady()){prompt("Calibration input unavailable. Connect the computers, or re-pair if already connected.");seamless();break;}
+          _destination=needed;_enableAfterCalibration=true;
+          prompt("Calibration is required before seamless switching can turn on.");calibrationInstructions();
+        }else done(_backend.setSeamlessEnabled(true));
+      }else if(c=='2')done(_backend.setSeamlessEnabled(false));
+      else if(c=='3'&&_backend.absoluteMode())calibrationSlots();break;
+    case CalibrationSlots:
+      if(c>='1'&&c<='4'){
+        const unsigned ready=_backend.calibrationReady();_destination=c=='4'?ready:(ready&(1u<<number(c)));
+        if(!_destination){prompt("No calibration-ready computer selected.");calibrationSlots();break;}
+        calibrationInstructions();
+      }break;
+    case CalibrationConfirm:
+      if(c=='y'){_page=CalibrationDrain;prompt("Starting when this message finishes. Keep this document focused. Results return here after each slot and at completion.");}
+      else if(c=='n')calibrationSlots();break;
+    case PointerSlot:
+      if(c>='1'&&c<='3'){_slot=number(c);if(!_backend.paired(_slot)){prompt("Pair that computer first.");break;}pointerFields();}break;
+    case PointerField:
+      if(c=='1'||c=='2'){_kind=number(c);_name.clear();_page=PointerText;prompt(std::string(pointerLabel())+" percentage (1-1600). Current: "+std::to_string(_backend.pointerValue(_slot,_kind))+"%. Enter to review.");}break;
+    case PointerConfirm:
+      if(c=='y')done(_backend.setPointerValue(_slot,_kind,_edgeDistance));else if(c=='n')pointerFields();break;
     case Computers:
       if(c=='1'){_page=RenameSlot;prompt("Rename slot:\n"+_backend.computers());}
       else if(c=='2'){_page=MoveFrom;prompt("Move from slot:\n"+_backend.computers());}
@@ -122,6 +166,16 @@ public:
   bool active()const{return _active;}
   bool busy()const{return _output.busy();}
   void cancel(){if(_active)close();}
+  // Calibration bypasses menu input tracking. Adopt current physical state so
+  // held keys/buttons cannot select an option when the menu reappears.
+  bool resume(uint32_t now,const uint8_t *keys,uint8_t modifiers,uint8_t buttons){
+    if(_active||!_backend.connected())return false;
+    _backend.release();_output.clear();_name.clear();
+    _host=_backend.selected();_session=_backend.session();_activity=now;
+    memcpy(_previous,keys,6);_modifiers=modifiers;_buttons=buttons;
+    _released=!modifiers&&!buttons;for(auto key:_previous)if(key)_released=false;
+    _active=true;main();return true;
+  }
   void button(bool down,uint32_t now){
     if(!_button.update(down,_active,now))return;
     if(_active){close();return;}
@@ -142,13 +196,13 @@ public:
       bool held=false;for(auto key:previous)if(key==41)held=true;
       if(!held)back();return true;
     }
-    if(!_released||(_output.busy()&&!_textReady)||_page==Recording||_page==RecordArming||_page==SelectDrain||_page==ForgetDrain)return true;
+    if(!_released||(_output.busy()&&!_textReady)||_page==Recording||_page==RecordArming||_page==SelectDrain||_page==ForgetDrain||_page==CalibrationDrain)return true;
     for(unsigned i=0;i<6;++i)if(keys[i]){
       bool held=false;for(auto k:previous)if(k==keys[i])held=true;
       if(!held){
-        const bool editing=_textReady&&(_page==NameText||_page==RenameText||_page==EdgeText);
+        const bool editing=_textReady&&(_page==NameText||_page==RenameText||_page==EdgeText||_page==PointerText);
         key(keys[i],modifiers);
-        if(!editing||(_page!=NameText&&_page!=RenameText&&_page!=EdgeText))break;
+        if(!editing||(_page!=NameText&&_page!=RenameText&&_page!=EdgeText&&_page!=PointerText))break;
       }
     }
     return true;
@@ -165,7 +219,15 @@ public:
     if(!_backend.connected()||_backend.selected()!=_host||_backend.session()!=_session||uint32_t(now-_activity)>120000){close();return;}
     _output.tick(now,_backend.reportSpacing(),[this](const uint8_t *report){return _backend.send(report);});
     if(_output.busy())return;
-    if(_page==NameText||_page==RenameText||_page==EdgeText)_textReady=true;
+    if(_page==NameText||_page==RenameText||_page==EdgeText||_page==PointerText)_textReady=true;
+    if(_page==CalibrationDrain){
+      // Finish instructions on the original host before selecting any other host.
+      const unsigned mask=_destination;
+      _backend.release();
+      if(_backend.beginCalibration(mask,_enableAfterCalibration)){_output.clear();_active=false;}
+      else {prompt("Could not start calibration. Check connections and try again.");calibrationSlots();}
+      return;
+    }
     if(_page==SelectDrain){const auto slot=_destination;close();_backend.select(slot);return;}
     if(_page==ForgetDrain){
       const auto error=_backend.forget(_slot);

@@ -4,6 +4,17 @@
 #include <vector>
 #include <array>
 struct FakeBackend {
+  bool absolute=false,pointerSave=true,seamlessOn=false;
+  unsigned readyMask=3,neededMask=0,startedMask=0;bool startOk=true,enableAfter=false;
+  unsigned calibrationReady(){return readyMask;}
+  unsigned calibrationNeeded(){return neededMask;}
+  bool beginCalibration(unsigned mask,bool enable){if(!startOk)return false;startedMask=mask;enableAfter=enable;return true;}
+  bool seamlessEnabled(){return seamlessOn;}
+  bool setSeamlessEnabled(bool enabled){if(enabled&&neededMask)return false;seamlessOn=enabled;return true;}
+  PointerTuning profiles[3];
+  bool absoluteMode(){return absolute;}
+  unsigned pointerValue(unsigned slot,unsigned field){return profiles[slot].get(field);}
+  bool setPointerValue(unsigned slot,unsigned field,unsigned value){if(!pointerSave)return false;profiles[slot].set(field,value);++saves;return true;}
   unsigned edgeDistance=100;bool edgeSave=true;
   unsigned edgeThreshold(){return edgeDistance;}
   bool setEdgeThreshold(unsigned value){if(!edgeSave)return false;edgeDistance=value;++saves;return true;}
@@ -73,7 +84,34 @@ int main(){
   assert(!emitter.busy());assert(!emitter.append(std::string(4097,'x')));
   MenuButton button;assert(!button.update(true,false,0xfffffff0));assert(button.update(true,false,3000));assert(!button.update(true,true,3010));
   button.update(false,true,3011);assert(button.update(true,true,3012));
-  Fixture f;f.open();assert(f.b.output.find("1 Computers\n2 Shortcuts\n3 Bluetooth name\n4 Diagnostics\n5 Edge switching\nESC Exit")!=std::string::npos);
+  Fixture f;f.open();assert(f.b.output.find("1 Computers\n2 Shortcuts\n3 Bluetooth name\n4 Diagnostics\n5 Edge switching\n6 Seamless switching\nESC Exit")!=std::string::npos);
+  Fixture pointer;pointer.b.absolute=true;pointer.open();pointer.press('7');pointer.press('2');pointer.press('1');
+  pointer.press('4');pointer.press('2');pointer.press('\n');assert(pointer.b.profiles[1].horizontal==100);pointer.press('y');assert(pointer.b.profiles[1].horizontal==42&&pointer.b.profiles[0].horizontal==100);
+  pointer.press('7');pointer.press('2');pointer.press('2');pointer.press('0');pointer.press('\n');assert(pointer.b.output.find("whole percentage")!=std::string::npos);
+  pointer.press('5');pointer.press('0');pointer.press('\n');pointer.press('n');assert(pointer.b.profiles[1].vertical==100);
+  pointer.press('2');pointer.press('5');pointer.press('0');pointer.press('\n');pointer.b.pointerSave=false;pointer.press('y');assert(pointer.b.profiles[1].vertical==100&&pointer.b.output.find("Could not save")!=std::string::npos);
+  Fixture calibration;calibration.b.absolute=true;calibration.open();calibration.press('6');calibration.press('3');calibration.press('4');
+  assert(calibration.b.startedMask==0);calibration.press('y');assert(!calibration.menu.active()&&calibration.b.startedMask==3&&!calibration.b.enableAfter);
+  uint8_t held[6]={textKey('1').code};
+  assert(calibration.menu.resume(calibration.b.now,held,0,1));calibration.drain();assert(calibration.menu.active());
+  auto resumeStart=calibration.b.output.size();
+  calibration.raw(held[0]);calibration.raw(0);calibration.drain();
+  assert(calibration.b.output.size()==resumeStart); // held mouse still blocks choices
+  calibration.menu.mouse(0,calibration.b.now);calibration.press('6');
+  assert(calibration.b.output.substr(resumeStart).find("Seamless switching:")!=std::string::npos);
+  calibration.back();calibration.back();assert(!calibration.menu.active());
+  calibration.b.online=false;uint8_t emptyKeys[6]={};assert(!calibration.menu.resume(calibration.b.now,emptyKeys,0,0));
+  calibration.b.online=true;assert(calibration.menu.resume(calibration.b.now,emptyKeys,0,0));calibration.drain();
+  ++calibration.b.revision;calibration.tick();assert(!calibration.menu.active());
+  Fixture single;single.b.absolute=true;single.open();single.press('6');single.press('3');single.press('2');single.press('y');assert(single.b.startedMask==2);
+  Fixture opt;opt.b.absolute=true;opt.b.neededMask=3;opt.open();opt.press('6');opt.press('1');
+  assert(!opt.b.seamlessOn&&opt.b.output.find("Calibration is required")!=std::string::npos);opt.press('y');assert(opt.b.startedMask==3&&opt.b.enableAfter&&!opt.b.seamlessOn);
+  Fixture calibrated;calibrated.b.absolute=true;calibrated.open();calibrated.press('6');calibrated.press('1');assert(calibrated.b.seamlessOn);
+  calibrated.press('6');calibrated.press('2');assert(!calibrated.b.seamlessOn);
+  Fixture cancelCal;cancelCal.b.absolute=true;cancelCal.open();cancelCal.press('6');cancelCal.press('3');cancelCal.press('4');
+  cancelCal.raw(textKey('y').code);cancelCal.raw(0);cancelCal.back();assert(cancelCal.b.startedMask==0);
+  Fixture missingCal;missingCal.b.absolute=true;missingCal.b.neededMask=3;missingCal.b.readyMask=1;missingCal.open();missingCal.press('6');missingCal.press('1');assert(!missingCal.b.seamlessOn&&missingCal.b.startedMask==0);
+  Fixture failedStart;failedStart.b.absolute=true;failedStart.b.startOk=false;failedStart.open();failedStart.press('6');failedStart.press('3');failedStart.press('1');failedStart.press('y');assert(failedStart.menu.active()&&failedStart.b.startedMask==0);
   Fixture edge;edge.open();edge.press('5');assert(edge.b.output.find("Current edge distance: 100 counts")!=std::string::npos);
   for(char c:std::string("250"))edge.press(c);edge.press('\n');assert(edge.b.edgeDistance==100);edge.press('Y');assert(edge.b.edgeDistance==250);
   edge.press('5');assert(edge.b.output.find("Current edge distance: 250 counts")!=std::string::npos);

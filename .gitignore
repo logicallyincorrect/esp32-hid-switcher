@@ -1,8 +1,10 @@
+.DS_Store
 .pio/
 .vscode/
 .aider*
 
 .venv/
+__pycache__/
 artifacts/
 
 # pioarduino hybrid SDK build outputs
