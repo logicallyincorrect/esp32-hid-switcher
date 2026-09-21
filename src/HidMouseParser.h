@@ -56,7 +56,8 @@ public:
           mouseStack[collectionDepth++]=mouse;
           if(v==1) mouse=(g.page==1 && n && usages[0]==2);
         } else if(item==12) {
-          if(!collectionDepth)return false;mouse=mouseStack[--collectionDepth];
+          if(!collectionDepth)return false;
+          mouse=mouseStack[--collectionDepth];
         } else if(item==8) {
           auto l=layout(); if(!l||l->bits+g.size*g.count>512)return false;
           if(mouse && !(v&1) && (v&2)) {
