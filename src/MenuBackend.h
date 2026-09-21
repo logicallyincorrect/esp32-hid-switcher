@@ -1,6 +1,7 @@
 #pragma once
 #include "BleHid.h"
 #include "UsbHost.h"
+#include "BleInput.h"
 #include <esp_app_desc.h>
 #include <string>
 
@@ -8,6 +9,9 @@ class MenuBackend {
   BleHid &_ble;
   UsbHost &_usb;
   String _token;
+#if HID_BLE_INPUT
+  BleInput *_bleInput=nullptr;
+#endif
   bool command(const char *op,unsigned action=0,unsigned kind=0){
     JsonDocument request,result;String error;
     request["op"]=op;request["action"]=action;request["kind"]=kind;
@@ -15,6 +19,32 @@ class MenuBackend {
   }
 public:
   MenuBackend(BleHid &ble, UsbHost &usb):_ble(ble),_usb(usb){}
+#if HID_BLE_INPUT
+  void inputDevice(BleInput &input){_bleInput=&input;}
+  bool bleInputAvailable(){return _bleInput!=nullptr;}
+  bool bleInputBusy(){return _bleInput&&_bleInput->busy();}
+  bool bleInputCommand(const std::string &command){return _bleInput&&_bleInput->command(command.c_str());}
+  void cancelBleInput(){if(_bleInput)_bleInput->cancel();}
+  std::string bleInputStatus(){return _bleInput?_bleInput->status():"Unavailable";}
+  std::string bleInputDevices(){return _bleInput?_bleInput->devices():"Unavailable";}
+  unsigned bleInputCount(){return _bleInput?_bleInput->deviceCount():0;}
+  uint32_t bleInputRevision(){return _bleInput?_bleInput->revision():0;}
+  uint32_t bleComparison(){return _bleInput?_bleInput->comparison():0;}
+  uint32_t blePairingId(){return _bleInput?_bleInput->pairingId():0;}
+  bool bleConfirm(uint32_t id,uint32_t code){return _bleInput&&_bleInput->confirmPairing(id,code);}
+#else
+  bool bleInputAvailable(){return false;}
+  bool bleInputBusy(){return false;}
+  bool bleInputCommand(const std::string &){return false;}
+  void cancelBleInput(){}
+  std::string bleInputStatus(){return "Unavailable";}
+  std::string bleInputDevices(){return "Unavailable";}
+  unsigned bleInputCount(){return 0;}
+  uint32_t bleInputRevision(){return 0;}
+  uint32_t bleComparison(){return 0;}
+  uint32_t blePairingId(){return 0;}
+  bool bleConfirm(uint32_t,uint32_t){return false;}
+#endif
   bool connected(){return _ble.isConnected();}
   unsigned selected(){return _ble.selected();}
   uint32_t session(){return _ble.menuSession();}
@@ -62,6 +92,8 @@ public:
   bool beginCalibration(unsigned mask,bool enableAfter){return _ble.beginCalibration(mask,enableAfter);}
   bool seamlessEnabled(){return _ble.seamlessEnabled();}
   bool setSeamlessEnabled(bool value){return _ble.setSeamlessEnabled(value);}
+  unsigned sharedSpeed(){return _ble.sharedSpeed();}
+  bool setSharedSpeed(unsigned value){return _ble.setSharedSpeed(value);}
   unsigned calibrationNeeded(){return _ble.calibrationNeeded();}
   bool absoluteMode(){return _ble.absoluteMode();}
   unsigned pointerValue(unsigned slot,unsigned field){return _ble.pointerValue(slot,field);}

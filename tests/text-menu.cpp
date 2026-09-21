@@ -4,15 +4,34 @@
 #include <vector>
 #include <array>
 struct FakeBackend {
+  bool bleAvailable=false,bleBusy=false;unsigned bleRevision=0,bleCancelled=0;
+  uint32_t compareCode=0,pairingId=1;unsigned bleConfirmed=0;
+  uint32_t bleComparison(){return compareCode;}
+  uint32_t blePairingId(){return pairingId;}
+  bool bleConfirm(uint32_t id,uint32_t code){if(id!=pairingId||compareCode!=code+1)return false;compareCode=0;++bleConfirmed;return true;}
+  std::string bleCommand,bleStatus="Disconnected";
+  unsigned bleCount=2;
+  bool bleInputAvailable(){return bleAvailable;}
+  bool bleInputBusy(){return bleBusy;}
+  bool bleInputCommand(const std::string &command){if(bleBusy)return false;bleCommand=command;bleBusy=true;return true;}
+  void cancelBleInput(){++bleCancelled;bleBusy=false;}
+  std::string bleInputStatus(){return bleStatus;}
+  std::string bleInputDevices(){if(bleCount==2)return "1 Keyboard [aa:bb]\n2 Combo [cc:dd]\n";std::string result;for(unsigned i=1;i<=bleCount;++i)result+=std::to_string(i)+" Device "+std::to_string(i)+"\n";return result;}
+  unsigned bleInputCount(){return bleCount;}
+  unsigned bleInputRevision(){return bleRevision;}
+
   bool absolute=false,pointerSave=true,seamlessOn=false;
   unsigned readyMask=3,neededMask=0,startedMask=0;bool startOk=true,enableAfter=false;
   unsigned calibrationReady(){return readyMask;}
   unsigned calibrationNeeded(){return neededMask;}
   bool beginCalibration(unsigned mask,bool enable){if(!startOk)return false;startedMask=mask;enableAfter=enable;return true;}
   bool seamlessEnabled(){return seamlessOn;}
-  bool setSeamlessEnabled(bool enabled){if(enabled&&neededMask)return false;seamlessOn=enabled;return true;}
+  bool setSeamlessEnabled(bool enabled){seamlessOn=enabled;return true;}
   PointerTuning profiles[3];
   bool absoluteMode(){return absolute;}
+  unsigned speed=100;
+  unsigned sharedSpeed(){return speed;}
+  bool setSharedSpeed(unsigned value){if(!pointerSave)return false;speed=value;return true;}
   unsigned pointerValue(unsigned slot,unsigned field){return profiles[slot].get(field);}
   bool setPointerValue(unsigned slot,unsigned field,unsigned value){if(!pointerSave)return false;profiles[slot].set(field,value);++saves;return true;}
   unsigned edgeDistance=100;bool edgeSave=true;
@@ -85,11 +104,46 @@ int main(){
   MenuButton button;assert(!button.update(true,false,0xfffffff0));assert(button.update(true,false,3000));assert(!button.update(true,true,3010));
   button.update(false,true,3011);assert(button.update(true,true,3012));
   Fixture f;f.open();assert(f.b.output.find("1 Computers\n2 Shortcuts\n3 Bluetooth name\n4 Diagnostics\n5 Edge switching\n6 Seamless switching\nESC Exit")!=std::string::npos);
-  Fixture pointer;pointer.b.absolute=true;pointer.open();pointer.press('7');pointer.press('2');pointer.press('1');
-  pointer.press('4');pointer.press('2');pointer.press('\n');assert(pointer.b.profiles[1].horizontal==100);pointer.press('y');assert(pointer.b.profiles[1].horizontal==42&&pointer.b.profiles[0].horizontal==100);
-  pointer.press('7');pointer.press('2');pointer.press('2');pointer.press('0');pointer.press('\n');assert(pointer.b.output.find("whole percentage")!=std::string::npos);
-  pointer.press('5');pointer.press('0');pointer.press('\n');pointer.press('n');assert(pointer.b.profiles[1].vertical==100);
-  pointer.press('2');pointer.press('5');pointer.press('0');pointer.press('\n');pointer.b.pointerSave=false;pointer.press('y');assert(pointer.b.profiles[1].vertical==100&&pointer.b.output.find("Could not save")!=std::string::npos);
+  assert(f.b.output.find("BLE input devices")==std::string::npos);
+  Fixture ble;ble.b.bleAvailable=true;ble.open();ble.press('8');ble.press('1');
+  assert(ble.b.bleCommand=="scan"&&ble.b.bleBusy);
+  ble.b.bleBusy=false;ble.drain();assert(ble.b.output.find("2 Combo [cc:dd]")!=std::string::npos);
+  ble.press('3');assert(ble.b.bleCommand=="scan"); // invalid result must not connect
+  ble.press('2');assert(ble.b.bleCommand=="connect 2");
+  ble.b.bleStatus="Type 123456 on the WIRELESS keyboard";++ble.b.bleRevision;ble.drain();
+  assert(ble.b.output.find("Type 123456")!=std::string::npos);
+  ble.b.compareCode=12346;ble.b.bleStatus="Compare 012345";++ble.b.bleRevision;ble.drain();
+  assert(ble.b.output.find("Do BOTH codes match?")!=std::string::npos);
+  ble.press('y');assert(ble.b.bleConfirmed==1&&ble.b.compareCode==0);
+  ble.press('y');assert(ble.b.bleConfirmed==1); // One response per displayed prompt.
+  ble.b.bleBusy=false;ble.b.bleStatus="Connected";ble.drain();
+  ble.press('4');assert(ble.b.bleCommand=="connect 2");ble.press('n');
+  ble.press('4');ble.press('y');assert(ble.b.bleCommand=="forget");
+  ble.back();assert(ble.b.bleCancelled==1);
+  ble.press('1');assert(ble.b.bleBusy);const auto beforeHostLoss=ble.b.output.size();
+  ++ble.b.revision;ble.tick();assert(!ble.menu.active()&&ble.b.bleCancelled==2);
+  assert(ble.b.output.size()==beforeHostLoss); // no pairing prompt leaks into another session
+  Fixture stale;stale.b.bleAvailable=true;stale.open();stale.press('8');stale.press('2');
+  stale.b.compareCode=43;stale.b.bleStatus="Compare 000042";++stale.b.bleRevision;stale.drain();
+  ++stale.b.pairingId;stale.press('y');assert(stale.b.bleConfirmed==0);
+  assert(stale.b.output.find("expired or changed")!=std::string::npos);
+  stale.back();assert(stale.menu.active()&&stale.b.bleCancelled==1);
+  stale.press('2');stale.b.compareCode=43;++stale.b.bleRevision;stale.drain();stale.press('n');
+  assert(stale.menu.active()&&stale.b.bleCancelled==2&&stale.b.bleConfirmed==0);
+  stale.press('2');stale.menu.button(true,stale.b.now);
+  assert(!stale.menu.active()&&stale.b.bleCancelled==3);
+  uint8_t releasedKeys[6]={};assert(!stale.menu.keyboard(releasedKeys,0,stale.b.now));
+  assert(!stale.menu.mouse(0,stale.b.now));
+  Fixture pages;pages.b.bleAvailable=true;pages.b.bleCount=12;pages.open();pages.press('8');pages.press('5');
+  assert(pages.b.bleCommand=="scan all");pages.b.bleBusy=false;pages.drain();
+  pages.press('n');assert(pages.b.output.find("3 Device 12")!=std::string::npos);
+  pages.press('4');assert(pages.b.bleCommand=="scan all");
+  pages.press('p');pages.press('n');pages.press('3');assert(pages.b.bleCommand=="connect 12");
+  Fixture pointer;pointer.b.absolute=true;pointer.open();pointer.press('7');
+  pointer.press('4');pointer.press('2');pointer.press('\n');assert(pointer.b.speed==100);pointer.press('y');assert(pointer.b.speed==42);
+  pointer.press('7');pointer.press('0');pointer.press('\n');assert(pointer.b.output.find("whole percentage")!=std::string::npos);
+  pointer.press('5');pointer.press('0');pointer.press('\n');pointer.press('n');assert(pointer.b.speed==42);
+  pointer.press('5');pointer.press('0');pointer.press('\n');pointer.b.pointerSave=false;pointer.press('y');assert(pointer.b.speed==42&&pointer.b.output.find("Could not save")!=std::string::npos);
   Fixture calibration;calibration.b.absolute=true;calibration.open();calibration.press('6');calibration.press('3');calibration.press('4');
   assert(calibration.b.startedMask==0);calibration.press('y');assert(!calibration.menu.active()&&calibration.b.startedMask==3&&!calibration.b.enableAfter);
   uint8_t held[6]={textKey('1').code};
@@ -105,12 +159,12 @@ int main(){
   ++calibration.b.revision;calibration.tick();assert(!calibration.menu.active());
   Fixture single;single.b.absolute=true;single.open();single.press('6');single.press('3');single.press('2');single.press('y');assert(single.b.startedMask==2);
   Fixture opt;opt.b.absolute=true;opt.b.neededMask=3;opt.open();opt.press('6');opt.press('1');
-  assert(!opt.b.seamlessOn&&opt.b.output.find("Calibration is required")!=std::string::npos);opt.press('y');assert(opt.b.startedMask==3&&opt.b.enableAfter&&!opt.b.seamlessOn);
+  assert(opt.b.seamlessOn&&opt.b.startedMask==0);
   Fixture calibrated;calibrated.b.absolute=true;calibrated.open();calibrated.press('6');calibrated.press('1');assert(calibrated.b.seamlessOn);
   calibrated.press('6');calibrated.press('2');assert(!calibrated.b.seamlessOn);
   Fixture cancelCal;cancelCal.b.absolute=true;cancelCal.open();cancelCal.press('6');cancelCal.press('3');cancelCal.press('4');
   cancelCal.raw(textKey('y').code);cancelCal.raw(0);cancelCal.back();assert(cancelCal.b.startedMask==0);
-  Fixture missingCal;missingCal.b.absolute=true;missingCal.b.neededMask=3;missingCal.b.readyMask=1;missingCal.open();missingCal.press('6');missingCal.press('1');assert(!missingCal.b.seamlessOn&&missingCal.b.startedMask==0);
+  Fixture missingCal;missingCal.b.absolute=true;missingCal.b.neededMask=3;missingCal.b.readyMask=1;missingCal.open();missingCal.press('6');missingCal.press('1');assert(missingCal.b.seamlessOn&&missingCal.b.startedMask==0);
   Fixture failedStart;failedStart.b.absolute=true;failedStart.b.startOk=false;failedStart.open();failedStart.press('6');failedStart.press('3');failedStart.press('1');failedStart.press('y');assert(failedStart.menu.active()&&failedStart.b.startedMask==0);
   Fixture edge;edge.open();edge.press('5');assert(edge.b.output.find("Current edge distance: 100 counts")!=std::string::npos);
   for(char c:std::string("250"))edge.press(c);edge.press('\n');assert(edge.b.edgeDistance==100);edge.press('Y');assert(edge.b.edgeDistance==250);

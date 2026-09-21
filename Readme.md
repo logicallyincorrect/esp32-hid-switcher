@@ -16,6 +16,8 @@ Connect the hub to the native USB/OTG port. Use the UART/COM port for power and 
 
 A CH340 USB-to-UART port cannot operate as a USB host.
 
+An optional [BLE keyboard/trackpad input experiment](docs/ble-input.md) adds one wireless input peripheral alongside USB, using a separate four-connection build. It is not enabled in the normal firmware.
+
 Printable case files, measured board dimensions, and assembly instructions are in [stls](stls/README.md).
 
 ## Install or update
@@ -30,7 +32,7 @@ pio run -e esp32s3_usb_ble_absolute -t upload --upload-port YOUR_UART_PORT
 
 These commands install the companion-free absolute-pointer build. Use `-e esp32s3_usb_ble` instead for relative-only firmware with optional macOS companion routing. The `esp32s3_usb_ble_absolute_only` environment is a diagnostic fallback, not the full calibration-capable firmware.
 
-All firmware updates use USB. There is no Wi-Fi or web configuration page. Setup remains on the device. The existing partition layout remains compatible with saved settings. Do not erase flash unless you want to remove pairings and settings.
+All firmware updates use USB. The [browser setup page and serial CLI](docs/usb-setup.md) can configure the device over its UART/programming port, including first-time BLE keyboard pairing without an existing keyboard. The BOOT menu remains available; no Wi-Fi is needed. The existing partition layout remains compatible with saved settings. Do not erase flash unless you want to remove pairings and settings.
 
 ## Connect computers
 
@@ -50,7 +52,7 @@ Both options provide seamless edge switching, **off by default**. Choose the fir
 | --- | --- | --- |
 | Firmware environment | `esp32s3_usb_ble_absolute` | `esp32s3_usb_ble` |
 | Software on each computer | None | macOS companion on each source Mac |
-| Pointer output | Absolute when enabled and calibrated; relative otherwise | Relative |
+| Pointer output | Absolute when enabled; relative otherwise | Relative |
 | Setup | Enable in menu; calibrate each slot or choose All | Install companion, then enable in menu |
 | Screen information | Two-corner calibration, one display per computer | Companion reports desktop edges; shared monitor boundaries stay on the same computer |
 | Pointer after switching | Opposite edge, retaining normalized vertical position | Destination pointer stays where it was |
@@ -92,6 +94,7 @@ Use a text editor, not a command shell. Keep the document selected until you exi
 | Edge switching | Set the outward movement distance (1-10000 counts) |
 | Seamless switching | Opt in/out; calibrate one slot or All in the absolute build |
 | Pointer tuning | Advanced per-computer axis percentages (absolute build) |
+| BLE input devices | Scan, select, pair, reconnect, disconnect, or forget a wireless keyboard/trackpad (experimental BLE input build) |
 
 To change the edge distance, select **5 Edge switching**, enter a value, press Enter, then `y`. The value applies immediately and stays saved after restart.
 

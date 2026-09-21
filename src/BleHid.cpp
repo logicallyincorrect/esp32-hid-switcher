@@ -1,4 +1,5 @@
 #include "BleHid.h"
+#include "BleInputConfig.h"
 #include "Board.h"
 #include "ForgetPairing.h"
 #include <nimble/nimble/host/include/host/ble_store.h>
@@ -32,6 +33,13 @@ void BleHid::begin(uint8_t slot) {
     }
     if(!saveConfig(_config)){Serial.println("[Config] Cannot save slot assignments");abort();}
   }
+  const size_t layoutSize=_prefs.getBytesLength("monitor-layout");
+  if(layoutSize==sizeof(MonitorLayout)||layoutSize==sizeof(MonitorLayout::Legacy)){
+    uint8_t bytes[sizeof(MonitorLayout)];
+    if(_prefs.getBytes("monitor-layout",bytes,layoutSize)==layoutSize)_absolutePointer.layout.load(bytes,layoutSize);
+  }
+  _sharedSpeed=_prefs.getUInt("pointer-speed",SharedPointerScale::defaultSpeed);
+  if(!SharedPointerScale::valid(_sharedSpeed))_sharedSpeed=SharedPointerScale::defaultSpeed;
   _edges.setThreshold(_prefs.getUInt("edge-distance",EdgeSettings::defaultDistance),millis());
   // An interrupted timing probe stays disabled across reboot; normal pairing
   // and input still work. Do not repeatedly trigger a controller fault.
@@ -50,7 +58,8 @@ void BleHid::begin(uint8_t slot) {
   NimBLEDevice::init(_deviceName.c_str());
   for(unsigned i=0;i<3;++i)if(_config.slots[i].assigned==2)forgetComputer(i);
   Serial.printf("[BLE diagnostic] restored bonds=%u\n",NimBLEDevice::getNumBonds());
-  // The bridge has no display or passkey entry UI. Use encrypted bonded pairing.
+  // Destination pairing must also work before an input keyboard is usable.
+  // The BLE input worker temporarily enables passkey display for its pairing.
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
   NimBLEDevice::setSecurityAuth(true, false, true);
   _server = NimBLEDevice::createServer();
@@ -116,7 +125,9 @@ void BleHid::begin(uint8_t slot) {
     _prefs.putBool("mouse-gatt", true);
   }
   auto adv = NimBLEDevice::getAdvertising();
-  adv->setAppearance(HID_KEYBOARD);
+  // Generic appearance avoids advertising a keyboard classification while
+  // acting as an input host. HID services still describe computer-facing input.
+  adv->setAppearance(0x0000);
   adv->addServiceUUID(_hid->getHidService()->getUUID());
   adv->addServiceUUID(EdgeProtocol::service);
   adv->enableScanResponse(true);
@@ -127,6 +138,8 @@ void BleHid::begin(uint8_t slot) {
 }
 
 void BleHid::enqueue(Kind kind, const NimBLEConnInfo &info, uint16_t sub, uint8_t reportId) {
+  // Incoming keyboard links belong to the BLE central, never a computer slot.
+  if(!info.isSlave())return;
   Event event{kind, info.getConnHandle(), *info.getIdAddress().getBase(),
               info.isEncrypted(), info.isBonded(), sub, reportId};
   if (xQueueSend(_events, &event, 0) != pdTRUE) {
@@ -161,7 +174,7 @@ void BleHid::handle(const Event &e) {
   }
   // Ignore stale queued events for connections that have already gone away.
   ble_gap_conn_desc live;
-  if (ble_gap_conn_find(e.handle, &live) != 0) return;
+  if (ble_gap_conn_find(e.handle, &live) != 0 || live.role != BLE_GAP_ROLE_SLAVE) return;
   for(const auto &stored:_config.slots)if(stored.assigned==2&&stored.type==live.peer_id_addr.type&&
     !memcmp(stored.address,live.peer_id_addr.val,6)){_server->disconnect(e.handle);return;}
   auto p = peer(e.handle);
@@ -502,9 +515,11 @@ bool BleHid::shortcutCommand(JsonVariantConst command,JsonObject result,String &
   if(!strcmp(op,"shortcut-record")){
     if(!command["action"].is<unsigned>()||command["action"].as<unsigned>()>3){error="Choose Cycle, Next, Previous, or Slot";return false;}
     if(_shortcutRecorder.active()){error="Another recording is active; cancel it or wait 60 seconds";return false;}
+    const unsigned kind=command["kind"]|0u;
+    if(kind>2||(command["action"].as<unsigned>()==Slot&&kind==2)){error="Unsupported shortcut input type";return false;}
     char token[33];snprintf(token,sizeof(token),"%08lx%08lx%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random());_shortcutToken=token;
     releaseAll();
-    _shortcutRecorder.begin(command["action"],millis(),_shortcuts.generation);
+    _shortcutRecorder.begin(command["action"],millis(),_shortcuts.generation,kind);
     result["token"]=_shortcutToken;result["state"]="waiting";return true;
   }
   if(!strcmp(op,"shortcuts-reset")){
@@ -656,9 +671,8 @@ void BleHid::onWrite(NimBLECharacteristic *characteristic,NimBLEConnInfo &info){
 bool BleHid::edgeMouse(MouseReport &report,uint32_t received,bool blocked){
   if(PointerMode::absolute){
     if(!useAbsolutePointer())return false;
-    const auto &t=_pointerTuning[selected()];
-    if(t.spanX&&t.spanY)return _absolutePointer.motion(report,blocked,(micros()-received)/1000,millis(),edgeThreshold(),32767*t.horizontal,32767*t.vertical,100*t.spanX,100*t.spanY);
-    return _absolutePointer.motion(report,blocked,(micros()-received)/1000,millis(),edgeThreshold(),PointerMode::gainX*t.horizontal,PointerMode::gainY*t.vertical,100);
+    const auto &screen=_absolutePointer.layout.screens[selected()];
+    return _absolutePointer.motion(report,blocked,(micros()-received)/1000,millis(),edgeThreshold(),SharedPointerScale::gain(_sharedSpeed,screen.sensitivity),SharedPointerScale::gain(_sharedSpeed,screen.sensitivity),SharedPointerScale::denominator(screen.width),SharedPointerScale::denominator(screen.height));
   }
   if(blocked){_edges.motion(0,1,millis(),millis());return false;}
   return _edges.motion(report.x,report.buttons,millis()-(micros()-received)/1000,millis());
@@ -668,7 +682,7 @@ void BleHid::serviceEdges(bool allowed){
   const uint32_t now=millis();uint8_t ready=0;
   if(calibrationActive()||!_seamlessEnabled)allowed=false;
   for(const auto &p:_peers)if(p.slot>=0&&!p.forgetting&&p.encrypted&&
-      (p.subscribed&PointerMode::subscriptions)==PointerMode::subscriptions&&connected(unsigned(p.slot))&&(!PointerMode::absolute||_pointerTuning[p.slot].spanX))ready|=1u<<p.slot;
+      (p.subscribed&PointerMode::subscriptions)==PointerMode::subscriptions&&connected(unsigned(p.slot)))ready|=1u<<p.slot;
   if(_edgeConfigGeneration!=_config.generation){_edges.reset(now);_absolutePointer.reset(now);_edgeConfigGeneration=_config.generation;}
   if(PointerMode::absolute){
     _absolutePointer.sync(selected(),ready,allowed,now);
@@ -746,13 +760,13 @@ uint8_t BleHid::calibrationReady()const{
   for(const auto &p:_peers)if(p.slot>=0&&!p.forgetting&&p.encrypted&&(p.subscribed&7)==7&&connected(p.slot))mask|=1u<<p.slot;
   return mask;
 }
-bool BleHid::beginCalibration(uint8_t mask,bool enableAfter){
+bool BleHid::beginCalibration(uint8_t mask,bool enableAfter,bool textFeedback){
   if(calibrationActive()||!mask||(mask&~calibrationReady()))return false;
   const unsigned original=selected();const int first=PointerCalibration::first(mask);
   releaseAll();selectSlot(unsigned(first));
   if(selected()!=unsigned(first))return false;
   _router.absoluteOutput(false);
-  _calibrationMenuReturn=false;
+  _calibrationMenuReturn=false;_calibrationTextFeedback=textFeedback;_calibrationFailed=false;_calibrationComplete=false;
   _enableAfterCalibration=enableAfter;_calibrationRequested=mask;_calibrationSaved=0;_calibrationEnableFailed=false;_calibrationFeedback.clear();
   _calibrationPending.clear();_calibration.begin(mask,original,millis());
   _calibrationSession=_connectionRevision;_calibrationLastSend=millis();_calibrationFeedbackAt=0;
@@ -765,7 +779,7 @@ void BleHid::cancelCalibration(bool failed,bool complete){
   const unsigned original=_calibration.origin;
   _calibrationFeedback.clear();_calibration.cancel();_enableAfterCalibration=false;_calibrationPending.clear();releaseAll();
   selectSlot(original);_router.absoluteOutput(useAbsolutePointer());++_inputEpoch;
-  _calibrationMenuReturn=complete&&selected()==original&&isConnected();
+  _calibrationMenuReturn=_calibrationTextFeedback&&complete&&selected()==original&&isConnected();
   _calibrationMenuSession=_connectionRevision;
   _calibrationFailed=failed;_calibrationComplete=complete;_calibrationFeedbackAt=millis();
   Serial.println(failed?"[Calibration] Failed; current slot unchanged. Returning to original slot.":"[Calibration] Ended; returning to original slot.");
@@ -813,12 +827,22 @@ void BleHid::serviceCalibration(){
     message+="Next: slot "+String(next+1)+". Move to TOP LEFT, left-click and release; then BOTTOM RIGHT, left-click and release.\n";
   }else{
     const uint8_t skipped=_calibrationRequested&~_calibrationSaved;
+    // Optional calibration estimates one shared scale, rather than assigning
+    // different movement scales to each screen. Apply only after completion.
+    unsigned sum=0,count=0;
+    for(unsigned i=0;i<3;++i)if(_calibrationSaved&(1u<<i)){
+      const auto &screen=_absolutePointer.layout.screens[i];const auto &t=_pointerTuning[i];
+      sum+=SharedPointerScale::estimate(screen.width,screen.height,t.spanX,t.spanY,screen.sensitivity);++count;
+    }
+    const unsigned speed=count?(sum+count/2)/count:_sharedSpeed;
+    if(_prefs.putUInt("pointer-speed",speed)==sizeof(uint32_t)){_sharedSpeed=speed;message+="Shared sensitivity: "+String(speed)+"%.\n";}
+    else {_calibrationEnableFailed=true;message+="Could not save shared sensitivity. Previous speed retained.\n";}
     message+="Calibration complete.";
     if(skipped){message+=" Skipped disconnected slots:";for(unsigned slot=0;slot<3;++slot)if(skipped&(1u<<slot))message+=" "+String(slot+1);}
     message+="\n";
     if(_enableAfterCalibration){
       // All requested captures have finished. Commit opt-in before reporting it.
-      if(!calibrationNeeded()&&_prefs.putBool("seamless",true)==1){_seamlessEnabled=true;message+="Seamless switching enabled.\n";}
+      if(_prefs.putBool("seamless",true)==1){_seamlessEnabled=true;message+="Seamless switching enabled.\n";}
       else {_calibrationEnableFailed=true;message+="Calibration saved, but seamless switching could not be enabled. Retry Enable from setup.\n";}
       _enableAfterCalibration=false;
     }else message+=_seamlessEnabled?"Seamless switching remains enabled.\n":"Seamless switching is off. Enable it from setup when ready.\n";
@@ -826,6 +850,14 @@ void BleHid::serviceCalibration(){
   if(!calibrationMessage(message,next))cancelCalibration(true);
 }
 bool BleHid::calibrationMessage(const String &message,int next){
+  if(!_calibrationTextFeedback){
+    Serial.printf("[Calibration] %s",message.c_str());
+    if(next<0){cancelCalibration(_calibrationEnableFailed,true);return true;}
+    if(!(calibrationReady()&(1u<<next)))return false;
+    releaseAll();selectSlot(unsigned(next));if(selected()!=unsigned(next))return false;
+    _calibration.start(unsigned(next),millis());_calibrationSession=_connectionRevision;
+    _calibrationPending.clear();_calibrationLastSend=millis();++_inputEpoch;return true;
+  }
   _calibrationPending.clear();releaseAll();selectSlot(_calibration.origin);
   if(selected()!=_calibration.origin||!connected(_calibration.origin))return false;
   _calibrationNext=next;++_inputEpoch;
@@ -863,8 +895,48 @@ uint8_t BleHid::calibrationNeeded()const{
   return mask;
 }
 bool BleHid::setSeamlessEnabled(bool enabled){
-  if(calibrationActive()||(enabled&&calibrationNeeded()))return false;
+  if(calibrationActive())return false;
   if(_prefs.putBool("seamless",enabled)!=1)return false;
   releaseAll();_seamlessEnabled=enabled;_router.absoluteOutput(useAbsolutePointer());
   _edges.reset(millis());++_inputEpoch;return true;
+}
+
+void BleHid::appendLayout(JsonObject out)const{
+  const auto &layout=_absolutePointer.layout;
+  out["active"]=bool(layout.active);out["generation"]=layout.generation;
+  auto screens=out["screens"].to<JsonArray>();
+  for(unsigned i=0;i<3;++i){const auto &s=layout.screens[i];auto item=screens.add<JsonObject>();item["x"]=s.x;item["y"]=s.y;item["width"]=s.width;item["height"]=s.height;item["enabled"]=bool(s.enabled);item["estimated"]=bool(s.estimated);item["sensitivity"]=s.sensitivity;item["span_x"]=_pointerTuning[i].spanX;item["span_y"]=_pointerTuning[i].spanY;}
+}
+bool BleHid::setLayout(JsonVariantConst request,String &error){
+  auto next=_absolutePointer.layout;
+  if(!PointerMode::absolute){error="Monitor arrangement requires absolute-pointer firmware";return false;}
+  if(!request["generation"].is<uint32_t>()||request["generation"].as<uint32_t>()!=next.generation){error="Arrangement changed. Reload it before saving.";return false;}
+  if(!request["active"].is<bool>()){error="Choose an arrangement mode";return false;}
+  auto screens=request["screens"].as<JsonArrayConst>();
+  if(screens.size()!=3){error="Provide all three slot rectangles";return false;}
+  for(unsigned i=0;i<3;++i){auto v=screens[i];
+    if(!v["x"].is<int32_t>()||!v["y"].is<int32_t>()||!v["width"].is<uint32_t>()||!v["height"].is<uint32_t>()||!v["enabled"].is<bool>()||!v["estimated"].is<bool>()){error="Invalid monitor dimensions";return false;}
+    if(!v["sensitivity"].isNull()&&!v["sensitivity"].is<unsigned>()){error="Screen sensitivity must be 25–400%";return false;}
+    const unsigned sensitivity=v["sensitivity"]|next.screens[i].sensitivity;
+    if(sensitivity<25||sensitivity>400){error="Screen sensitivity must be 25–400%";return false;}
+    next.screens[i]={v["x"],v["y"],v["width"],v["height"],v["enabled"].as<bool>()?1u:0u,v["estimated"].as<bool>()?1u:0u,sensitivity};
+  }
+  next.active=request["active"].as<bool>();++next.generation;
+  if(!next.valid()){error="Monitors must not overlap. Dimensions: 64–16384 pixels; positions: -65536–65536.";return false;}
+  if(_prefs.putBytes("monitor-layout",&next,sizeof(next))!=sizeof(next)){error="Could not save arrangement";return false;}
+  _absolutePointer.layout=next;_absolutePointer.reset(millis());return true;
+}
+
+bool BleHid::setSharedSpeed(unsigned value){
+  if(!SharedPointerScale::valid(value)||calibrationActive())return false;
+  if(_prefs.putUInt("pointer-speed",value)!=sizeof(uint32_t))return false;
+  _sharedSpeed=value;releaseAll();return true;
+}
+void BleHid::appendPointerPosition(JsonObject out)const{
+  out["x"]=_absolutePointer.positions[selected()].x;out["y"]=_absolutePointer.positions[selected()].y;
+}
+bool BleHid::probePointer(int x,int y){
+  if(!useAbsolutePointer()||calibrationActive()||!isConnected()||x<0||x>32767||y<0||y>32767)return false;
+  releaseAll();_absolutePointer.positions[selected()]={int16_t(x),int16_t(y)};
+  sendMouseReport({0,int16_t(x),int16_t(y),0,0},micros());return true;
 }

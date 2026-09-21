@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HID Switcher · Setup</title><link rel="stylesheet" href="style.css?v=screen-settings-3"></head>
+<body><main>
+<header><span class="eyebrow">HID SWITCHER / USB SETUP</span><h1>One keyboard.<br>Your computers.</h1><p>Install your switcher, connect a wireless keyboard, and make it yours. No keyboard connected to the switcher is needed to get started.</p></header>
+<div id="notice" role="status" aria-live="polite">Use desktop Chrome or Edge. Connect the Freenove ESP32-S3’s UART/programming port with a USB data cable.</div>
+<section><span class="step">01 / BOARD</span><h2>Connect / Firmware</h2><p>Connect the UART/programming USB port to manage your switcher.</p><div class="actions"><button id="connect">Connect board</button><button id="open-firmware" class="quiet">Install firmware</button><button id="disconnect" class="quiet" disabled>Disconnect</button></div><p id="connection">Not connected</p><p id="installed-firmware" class="small"></p>
+</section><dialog id="firmware-dialog" aria-labelledby="firmware-heading"><div class="section-heading"><h2 id="firmware-heading">Install firmware</h2><button id="close-firmware" class="quiet" aria-label="Close firmware selection">Close</button></div><div id="firmware-options"><p class="small">Freenove ESP32-S3 · 16 MB flash / 8 MB PSRAM. If setup is connected, we’ll ask before disconnecting it for installation.</p><p id="firmware-status">Loading available versions…</p><label>Firmware version<select id="firmware-version" disabled></select></label><div id="installer"></div><p class="small">Leave erase unchecked to retain pairings and settings. Older versions may not understand settings introduced by newer firmware.</p></div></dialog>
+<fieldset id="settings" disabled>
+<section><span class="step">02 / INPUTS</span><div class="section-heading"><h2>Input Devices</h2><button id="add-ble">Add BLE device</button></div><p class="small">USB and Bluetooth inputs share the selected output computer.</p><div id="usb-devices"></div><p id="no-inputs" class="small">Connect the board to read its devices.</p>
+<div id="input-saved" class="device-card" hidden><p id="input-summary" role="status"></p><div class="actions"><button id="reconnect">Reconnect</button><button id="input-disconnect" class="quiet">Disconnect input</button><button id="forget-input" class="quiet">Forget saved input</button></div></div>
+</section>
+<dialog id="ble-dialog" aria-labelledby="input-heading"><div class="section-heading"><h2 id="input-heading">Add BLE device</h2><button id="close-ble" class="quiet" aria-label="Close Bluetooth setup">Close</button></div><p class="small">Keep your device nearby and put it in Bluetooth pairing mode.</p>
+<div id="input-add"><p>Put your keyboard in Bluetooth pairing mode.</p><div class="actions"><button id="scan">Scan for keyboards</button></div></div>
+<p id="input-status" role="status" aria-live="polite"></p><button id="input-cancel" class="quiet" hidden>Cancel operation</button>
+<div id="input-pairing" class="pairing" hidden aria-live="polite">
+<p id="pairing-instruction"></p><p id="pairing-code" class="pairing-code"></p><p id="pairing-time" class="small"></p>
+<div class="actions"><button id="input-confirm">Codes match</button><button id="pairing-cancel" class="quiet">Cancel pairing</button></div></div>
+<div id="input-results" hidden><h3>Choose your device</h3><p class="small">Select only the keyboard or test device you want to add.</p><div id="devices" class="devices"></div></div>
+<details id="input-help"><summary>Can’t find or connect your device?</summary><p class="small">Try a broader scan for connectable BLE devices. Proprietary 2.4 GHz and Bluetooth Classic devices are not supported.</p><button id="scan-all" class="quiet">Scan all BLE devices</button><p id="input-diagnostics" class="small"></p><details id="pairing-history" hidden><summary>Last pairing prompt</summary><p id="pairing-history-text" class="small"></p></details></details>
+<p id="ble-success" hidden>Device added. You can close this dialog and use it with the selected computer.</p></dialog>
+<section><span class="step">03 / OUTPUTS</span><h2>Outputs</h2><p>Select a slot, then open that computer’s Bluetooth settings and pair with <strong id="advertised-name">HID SWITCHER BLE</strong>. Repeat for the other computers. Slot order is left to right.</p><p id="computer-passkey" role="status" aria-live="polite"></p><div id="slots"></div>
+<form id="rename"><label>Switcher Bluetooth name<input id="device-name" maxlength="29" required></label><button id="rename-save" hidden>Save name</button></form></section>
+<section><span class="step">04 / SWITCHING</span><h2>Choose how to switch</h2><p>Shortcuts work immediately. Seamless edge switching is optional and uses the monitor arrangement below. Calibration is optional.</p>
+<div class="switch-panel">
+<div class="switch-heading"><div><h3 id="seamless-label">Seamless switching</h3><p class="small">Move past a screen edge to switch computers.</p></div><button id="seamless-toggle" class="toggle" role="switch" aria-checked="false" aria-labelledby="seamless-label"><span class="toggle-track" aria-hidden="true"></span><span id="switch-state">Off</span></button></div>
+<p id="switch-help" class="small">Turn on to switch at screen edges.</p>
+<div id="monitor-arrangement" hidden></div>
+<div id="seamless-options" hidden>
+<form id="speed-form" class="edge-row"><div><label for="pointer-speed">Shared cursor speed (%)</label><p class="small">Start at 100%. Adjust the speed for all screens together; each screen can override it by a percentage.</p></div><div class="edge-value"><input id="pointer-speed" type="number" min="1" max="1600" value="100" required><button id="speed-save" class="quiet" hidden>Save</button></div></form>
+<div class="calibration-row"><div><strong>Optional calibration</strong><p id="calibration-summary" class="small"></p></div><button id="calibrate" class="quiet">Recalibrate</button><button id="calibration-cancel" class="quiet" hidden>Cancel</button></div>
+<p id="calibration" role="status" aria-live="polite" hidden></p><p id="calibration-guide" class="small" hidden>Move to the selected computer’s top-left corner, click and release. Wait for the bottom-right prompt, then move smoothly to that corner and click again. These clicks stay on the switcher.</p>
+<form id="edge-form" class="edge-row"><div><label for="edge">Edge travel</label><p id="edge-help" class="small">Extra mouse movement past the edge before switching. Increase to avoid accidental switches.</p></div><div class="edge-value"><input id="edge" aria-describedby="edge-help" aria-label="Edge travel in mouse counts" type="number" min="1" required><span class="small">mouse counts</span><button id="edge-save" class="quiet" hidden>Save</button></div></form>
+</div></div>
+<div class="section-heading shortcut-heading"><h3>Shortcuts</h3><button id="reset-shortcuts" class="text-action">Restore defaults</button></div><div id="reset-shortcuts-confirm" class="actions" hidden><span>Restore all default shortcuts?</span><button id="confirm-reset-shortcuts" class="quiet">Restore</button><button id="cancel-reset-shortcuts" class="quiet">Cancel</button></div><p class="small">Use the pencil to record. Release the keys or mouse buttons to save automatically.</p>
+<table class="shortcuts"><thead><tr><th>Action</th><th>Keyboard</th><th>Mouse</th></tr></thead><tbody id="bindings"></tbody></table>
+
+<p id="recording" class="small" role="status" aria-live="polite"></p>
+</section></fieldset>
+<footer>Settings are saved on the board. Disconnect when finished; the webpage does not need to stay open. The BOOT menu and serial CLI remain available.</footer>
+</main><script type="module" src="app.mjs?v=screen-settings-3"></script></body></html>

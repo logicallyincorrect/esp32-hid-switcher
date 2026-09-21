@@ -22,7 +22,7 @@ int main(){
   assert(p.destination()==2); // skip disconnected middle slot
   auto entry=p.enter(2,1002);assert(entry.x==0&&entry.y==17984);
   p.sync(2,5,true,1002);
-  r={0,-200,0,0,0};assert(!p.motion(r,false,0,1003,100,16,16)); // cooldown
+  r={0,-200,0,0,0};assert(!p.motion(r,false,0,1003,100,16,16)); // immediate return guard
   r={1,-200,0,0,0};assert(!p.motion(r,false,0,2000,100,16,16)); // drag
   r={0,-200,0,0,0};assert(!p.motion(r,true,0,2001,100,16,16)); // keyboard/barrier
   r={0,-200,0,0,0};assert(!p.motion(r,false,101,2002,100,16,16)); // stale input
@@ -47,6 +47,27 @@ int main(){
   PointerTuning tuning;unsigned value=0;assert(tuning.valid());
   assert(!PointerTuning::parse("0",0,value)&&!PointerTuning::parse("1601",0,value));
   assert(PointerTuning::parse("42",0,value)&&value==42);
+
+  // Minimum resistance crosses on the report that reaches the boundary,
+  // including fractional movement, with no delay after enabling/manual selection.
+  AbsolutePointer smooth;smooth.sync(0,7,true,0);smooth.positions[0]={32766,1234};
+  r={0,1,0,0,0};assert(smooth.motion(r,false,0,1,1,1,1));
+  assert(smooth.destination()==1);smooth.enter(1,1);
+  r={0,-1,0,0,0};assert(!smooth.motion(r,false,0,2,1,1,1));
+  // Continued motion across even a small/fast middle display is not blocked.
+  r={0,32767,0,0,0};assert(smooth.motion(r,false,0,3,1,1,1));
+  assert(smooth.destination()==2);smooth.enter(2,3);
+  r={0,-1,0,0,0};assert(smooth.motion(r,false,0,83,1,1,1));
+  assert(smooth.destination()==1);
+  AbsolutePointer fine;fine.sync(0,3,true,0);fine.positions[0]={32766,1000};
+  r={0,1,0,0,0};assert(!fine.motion(r,false,0,1,1,1,1,2));
+  r={0,1,0,0,0};assert(fine.motion(r,false,0,2,1,1,1,2));
+  AbsolutePointer left;left.sync(1,3,true,0);left.positions[1]={1,1000};
+  r={0,-1,0,0,0};assert(left.motion(r,false,0,1,1,1,1));assert(left.destination()==0);
+  // Holding a button still prevents minimum-resistance switching.
+  AbsolutePointer held;held.sync(0,3,true,0);held.positions[0]={32766,1000};
+  r={1,1,0,0,0};assert(!held.motion(r,false,0,1,1,1,1));
+  r={0,1,0,0,0};assert(!held.motion(r,true,0,2,1,1,1));
 
   MousePending q(true);assert(q.push({0,0,0,0,0}));assert(q.peek(r)&&r.x==0);q.accepted(r);
   assert(q.push({0,100,200,127,0}));assert(q.push({0,300,400,100,0}));

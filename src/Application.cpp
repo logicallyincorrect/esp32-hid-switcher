@@ -21,6 +21,10 @@ void Application::begin() {
   _ble.begin(_slot);
   _slot = _ble.selected();
   _usb.begin({this, keyboard, mouse});
+#if HID_BLE_INPUT
+  _bleInput.begin({this,bleKeyboard,bleMouse,bleReset});
+  _backend.inputDevice(_bleInput);
+#endif
   Serial.printf("[Ready] %s; hold BOOT for setup. UART: 1/2/3 select, ? status, u USB recovery.\n", _ble.deviceName().c_str());
 }
 
@@ -36,7 +40,12 @@ void Application::tick() {
   const uint32_t started = micros();
   if (_previousLoop && started - _previousLoop > _maxLoopGap) _maxLoopGap = started - _previousLoop;
   _previousLoop = started;
-  if (_usb.service()) discardInput(true);
+  if (_usb.service()) {
+#if HID_BLE_INPUT
+    _sources.clear(0);
+#endif
+    discardInput(true);
+  }
   _ble.loop();
   serviceBootHealth(_usb.healthy());
   const bool wasMenu = _menu.active();
@@ -86,11 +95,20 @@ void Application::tick() {
 
 void Application::drainInput() {
   Report report;
+#if HID_BLE_INPUT
+  portENTER_CRITICAL(&_queueLock);const bool resetBle=_bleReset;_bleReset=false;portEXIT_CRITICAL(&_queueLock);
+#endif
   while (xQueueReceive(_reports, &report, 0) == pdTRUE) {
+#if HID_BLE_INPUT
+    if(resetBle&&report.source)continue;
+    if(report.mouse)report.movement.buttons=_sources.mouse(report.source,report.movement.buttons);
+    else {_sources.keyboard(report.source,report.bytes);_sources.combined(report.bytes);}
+#endif
     if (report.mouse) {
       _input.buttons = report.movement.buttons;
       if(_ble.calibrationActive()){_ble.calibrationMouse(report.movement,report.received);_input.barrier();continue;}
       if (_menu.mouse(_input.buttons, millis())) { _input.barrier(); continue; }
+      if (_ble.recordState()>=1&&_ble.recordState()<=2) {_input.barrier();continue;}
       if (!_input.mouseBlocked && shortcut(true)) { _ble.releaseAll(); _input.barrier(); continue; }
       if(_ble.edgeMouse(report.movement,report.received,_input.keyboardHeld||_input.mouseBlocked))continue;
       report.movement.buttons = _input.forwardedButtons();
@@ -102,11 +120,19 @@ void Application::drainInput() {
         _input.barrier();continue;
       }
       if (_menu.keyboard(_input.keys, _input.modifiers, millis())) { _input.barrier(); continue; }
+      if (_ble.recordState()>=1&&_ble.recordState()<=2) {_input.barrier();continue;}
       if (_input.consumeKeyboard()) continue;
       if (shortcut(false)) { _input.keyboardBlocked = true; _ble.releaseAll(); continue; }
       _ble.sendKeyboardReport(_input.keys, _input.modifiers);
     }
   }
+#if HID_BLE_INPUT
+  if(resetBle){
+    for(unsigned source=1;source<9;++source)_sources.clear(source);
+    uint8_t merged[8];_sources.combined(merged);_input.keyboard(merged);_input.buttons=_sources.mouseButtons();
+    _ble.releaseAll();_input.barrier();
+  }
+#endif
 }
 
 bool Application::shortcut(bool mouse) {
@@ -140,8 +166,28 @@ void Application::indicators() {
 }
 
 void Application::serialCommands() {
-  while (Serial.available()) {
+  unsigned budget=96;
+  while (budget-- && Serial.available()) {
     const char command = Serial.read();
+    const auto framed=_serialFrame.feed(command,millis());
+    if(framed!=SerialFrame::Legacy){
+      if(framed==SerialFrame::Ready)serialRequest(_serialFrame.data());
+      else if(framed==SerialFrame::Invalid)Serial.println("@HID1 {\"id\":null,\"ok\":false,\"error\":\"Frame too long or expired\"}");
+      continue;
+    }
+#if HID_BLE_INPUT
+    if(_bleCommand){
+      if(command=='\n'||command=='\r'){
+        if(_bleLineOverflow)Serial.println("[BLE input] Command too long; discarded.");
+        else {const char *line=_bleLine;while(*line==' ')++line;if(!_bleInput.command(line))Serial.println("[BLE input] Command rejected or busy.");}
+        _bleCommand=false;_bleLineSize=0;_bleLineOverflow=false;_bleLine[0]=0;
+      }else if(command=='\b'||command==127){if(_bleLineSize)_bleLine[--_bleLineSize]=0;}
+      else if(_bleLineSize+1<sizeof(_bleLine)){_bleLine[_bleLineSize++]=command;_bleLine[_bleLineSize]=0;}
+      else _bleLineOverflow=true;
+      continue;
+    }
+    if(command=='b'){_bleCommand=true;continue;}
+#endif
     if (command >= '1' && command <= '3') {
       _ble.cancelCalibration();_menu.cancel(); _input.barrier(); select(command - '1');
     } else if (command == 'u') _usb.requestRecovery();
@@ -154,6 +200,9 @@ void Application::enqueue(const Report &report) {
   if (xQueueSend(_reports, &report, 0) == pdTRUE) return;
   portENTER_CRITICAL(&_queueLock);
   _overflow = true;
+#if HID_BLE_INPUT
+  if(report.source)_bleReset=true;
+#endif
   portEXIT_CRITICAL(&_queueLock);
 }
 
@@ -169,3 +218,20 @@ void Application::mouse(void *context, const MouseReport &movement) {
   report.mouse = true; report.movement = movement; report.received = micros();
   static_cast<Application *>(context)->enqueue(report);
 }
+
+#if HID_BLE_INPUT
+void Application::bleKeyboard(void *context,unsigned source,const uint8_t *bytes,size_t length){
+  if(length!=8||source<1||source>8)return;
+  Report report;report.source=source;memcpy(report.bytes,bytes,8);
+  static_cast<Application *>(context)->enqueue(report);
+}
+void Application::bleMouse(void *context,unsigned source,const MouseReport &movement){
+  if(source<1||source>8)return;
+  Report report;report.source=source;report.mouse=true;report.movement=movement;report.received=micros();
+  static_cast<Application *>(context)->enqueue(report);
+}
+void Application::bleReset(void *context){
+  auto self=static_cast<Application *>(context);
+  portENTER_CRITICAL(&self->_queueLock);self->_bleReset=true;portEXIT_CRITICAL(&self->_queueLock);
+}
+#endif

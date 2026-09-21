@@ -51,4 +51,10 @@ int main(){
   r.keyboard(empty,0x01);r.keyboard(empty,0x81);r.keyboard(empty,0x80);r.keyboard(empty,0);
   assert(r.state==ShortcutRecorder::Ready&&r.candidate.kind==1&&r.candidate.modifiers==9&&!r.candidate.keys[0]);
   r.tick(60001);assert(r.state==ShortcutRecorder::Expired); // Confirmation also expires.
+  r.keyboard(empty,0);r.mouse(0);r.begin(Cycle,0,0,1);
+  r.mouse(8);r.mouse(0);assert(r.state==ShortcutRecorder::Armed);
+  r.keyboard(tab,1);r.keyboard(empty,1);assert(r.state==ShortcutRecorder::Capturing);
+  r.keyboard(empty,0);assert(r.state==ShortcutRecorder::Ready&&!r.consuming());
+  r.begin(Next,0,0,2);r.keyboard(tab,0);r.keyboard(empty,0);assert(r.state==ShortcutRecorder::Armed);
+  r.mouse(8);r.mouse(0);assert(r.state==ShortcutRecorder::Ready&&!r.consuming());
 }

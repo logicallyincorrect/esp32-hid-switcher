@@ -1,6 +1,6 @@
-# Companion-free pointer calibration (experimental)
+# Companion-free absolute pointer and monitor arrangement (experimental)
 
-The absolute-pointer firmware now starts with **seamless switching OFF**. It forwards normal relative mouse movement until you explicitly enable seamless switching. Calibration and automatic edge switching target **one display per computer**, in slot order 1, 2, 3.
+The absolute-pointer firmware now starts with **seamless switching OFF**. It forwards normal relative mouse movement until you explicitly enable seamless switching. Optional calibration and automatic edge switching target **one display per computer**, in slot order 1, 2, 3.
 
 Build without flashing:
 
@@ -14,15 +14,15 @@ The binary is `.pio/build/esp32s3_usb_ble_absolute/firmware.bin`. The normal `es
 
 Open a blank text document on the selected computer, use a US keyboard layout with Caps Lock off, and hold BOOT for three seconds. Choose **6 Seamless switching → 1 Enable**.
 
-If a connected computer lacks calibration, Enable starts calibration for those slots first. Switching is enabled only after valid measurements are saved. Cancelling or failing an unfinished calibration does not enable it. The choice survives reboot.
+Enable takes effect immediately and survives reboot. Calibration is optional; no connected slot needs a corner-to-corner sweep before it can participate.
 
-Uncalibrated computers are excluded from edge switching. If a new or previously offline uncalibrated computer is selected manually, its mouse stays relative; use Enable again to calibrate the newly connected computer. Keyboard/mouse switching shortcuts remain available outside calibration.
+All connected, subscribed computers can participate without calibration. Keyboard/mouse switching shortcuts remain available outside calibration.
 
 To disable, use **6 Seamless switching → 2 Disable**. Mouse movement returns to relative output.
 
 ## Calibrate one slot or all
 
-Choose **6 Seamless switching → 3 Calibrate pointer**. Select slot **1**, **2**, **3**, or **4 All ready computers**. All snapshots the connected, calibration-ready slots and visits them in ascending order. It does not discover multiple monitors attached to a single computer.
+Choose **6 Seamless switching → 3 Optional sensitivity calibration**. Select slot **1**, **2**, **3**, or **4 All ready computers**. All snapshots the connected, calibration-ready slots and visits them in ascending order. It does not discover multiple monitors attached to a single computer.
 
 Keep the original text document focused on the computer where you started setup. The instructions finish there before any slot change. On each selected computer:
 
@@ -42,19 +42,21 @@ During calibration, the firmware sends a separate **relative mouse report**, so 
 
 No resolution or DPI entry is required. This is an empirical calibration at the speed of your sweep, not an automatic display-resolution measurement. Host acceleration, changing mouse DPI, overshooting the edges, other pointing devices, or different host pointer settings can affect the result. Move at a normal, steady speed and repeat calibration after display or mouse-setting changes. It cannot reproduce the host's full acceleration curve at every speed or guarantee identical physical speed across machines with different settings.
 
-Saved calibration follows the bonded computer when slots are reordered. Advanced **7 Pointer tuning** offers horizontal/vertical percentages (1–1600) relative to the measured scale; 100% uses the captured span. Recalibration resets both percentages to 100. Fractional scaling preserves small movements. Wheel scrolling remains unchanged outside calibration.
+Recorded spans follow the bonded computer when slots are reordered. Completing optional calibration estimates **one shared sensitivity** from configured dimensions divided by measured spans, averaging both axes and the slots completed in that run. It applies only at the end; cancelling leaves sensitivity unchanged. This is an approximate fit at the sweep speed, not a copy of the OS acceleration curve. Confirm dimensions first for a meaningful pixel-based estimate.
+
+The webpage and **7 Pointer tuning** set shared sensitivity (1–1600%). At 100%, one raw mouse count advances one configured desktop pixel on either axis. Each slot converts that travel into absolute HID units: `delta × 32767 × sensitivity / (100 × configured axis dimension)`. Fractional scaling retains small movements. Calibration spans and old per-slot percentages no longer determine normal motion. Changing monitor dimensions now changes movement scaling as well as edge geometry; OS-side behavior can still influence observed cursor motion. Scrolling is unchanged.
 
 ## Edge behavior
 
-After opt-in, firmware owns the absolute cursor position. Push beyond the left/right boundary by the distance configured under **5 Edge switching** (default 100 raw counts). Calibrated, connected slots are searched in that direction without wrapping. Entry is at the opposite edge with the same normalized Y.
+After opt-in, firmware owns the absolute cursor position. At edge distance 1, reaching the left/right boundary switches immediately. Higher settings require pushing beyond the boundary by the distance configured under **5 Edge switching** (default 100 raw counts). Connected slots are searched in that direction without wrapping. Entry is at the opposite edge with the same normalized Y.
 
-Dragging, held keys, the setup menu and calibration block edge switching. A switch has an 800 ms cooldown. Companion routing does not drive the absolute-pointer build. Cursor movements made by another mouse, trackpad or an application cannot be observed; the next absolute report can jump back to the firmware's position.
+Dragging, held keys, the setup menu and calibration block edge switching. An 80 ms guard prevents an immediate return across the entry edge; continued travel toward the next screen is not delayed. Companion routing does not drive the absolute-pointer build. Cursor movements made by another mouse, trackpad or an application cannot be observed; the next absolute report can jump back to the firmware's position.
 
 ## HID transport and compatibility
 
 The primary HID service contains keyboard report 1 and the NanoKVM-style absolute mouse report 2. The mouse carries five buttons, 16-bit absolute X/Y with logical and physical ranges 0–32767, and vertical wheel in one six-byte report. Press, drag, release, and scrolling all stay on that device. Neutral releases retain the last position.
 
-A second HID service contains only relative report 3 (eight buttons, signed 16-bit X/Y, wheel and horizontal pan). It is used during calibration and when seamless switching is disabled or the selected computer lacks calibration. Its report map is separate so the host does not merge its relative axes with the absolute device's buttons. There is one shared Device Information service. Firmware requests GATT Service Changed on migration (descriptor revision 8), retaining bonds and saved calibration. Calibration requires both services' reports to be subscribed; missing input is never treated as success.
+A second HID service contains only relative report 3 (eight buttons, signed 16-bit X/Y, wheel and horizontal pan). It is used during calibration and when seamless switching is disabled. Its report map is separate so the host does not merge its relative axes with the absolute device's buttons. There is one shared Device Information service. Firmware requests GATT Service Changed on migration (descriptor revision 8), retaining bonds and saved calibration. Calibration requires both services' reports to be subscribed; missing input is never treated as success.
 
 Absolute mode currently supports five mouse buttons and vertical scrolling; horizontal pan and buttons 6–8 remain available in relative mode only. The absolute descriptor matches NanoKVM's `hid.GS2` layout, with a report ID added for BLE. Reference: https://github.com/sipeed/NanoKVM/blob/bd070b2f5ce27d22618e8a1c8d2bdca543429882/kvmapp/system/init.d/S03usbdev
 
@@ -65,3 +67,28 @@ The user confirmed the isolated absolute mouse works on both computers. A macOS 
 The two-service integration restores calibration without mixing the two mouse layouts in one report map. Host tests verify descriptor separation, report widths/ranges, calibration state transitions, feedback routing and menu return. On the integrated build, macOS enumerated two independent HID devices: five absolute buttons with no RelativePointer group, and eight relative buttons on report 3. A fresh trace confirmed held drag events and matching release with both services present. The user subsequently confirmed that the integrated build works on both computers. This is device-specific acceptance, not validation of all operating systems or long-term reconnect stability.
 
 `pio run -e esp32s3_usb_ble_absolute_only` retains the validated diagnostic fallback: the same absolute mouse without the relative HID service. It keeps existing calibration and pairings, but cannot recalibrate and always outputs absolute movement even with automatic edge switching disabled. The full calibration-capable mode is `esp32s3_usb_ble_absolute`.
+
+## Monitor arrangement in USB setup
+
+The web setup page has an optional monitor arrangement for absolute seamless switching. Each slot represents one monitor. Drag screens into place (nearby edges snap), or select one to edit width, height, left and top in pixels. Negative coordinates allow screens above or left of the origin. Save to apply and persist the layout; edits remain a preview until saved. Discard keeps the saved layout. Use slot order restores the previous left/right routing.
+
+First-time calibration supplies raw mouse-travel spans, **not display resolutions**. The initial view uses these spans for estimated relative dimensions, anchored to a nominal 1920-pixel width for the first calibrated display. Estimated sizes are marked ≈. Enter and confirm actual width and height to replace these estimates. Saved dimensions and positions are not overwritten by recalibration. Unpaired, uncalibrated slots start outside the arrangement; Add slot includes them. Calibration is optional; all connected, subscribed computers can participate.
+
+In a saved custom arrangement, switching works on touching left, right, top and bottom edges. The crossing point maps through the desktop pixel coordinates, accounting for different dimensions and offsets. Only overlapping edge segments connect; gaps, corner-only contact, uncovered portions and offline neighbours do not switch. Overlapping rectangles are rejected. The destination starts at its matching edge. Drag and held-key protections and the short return guard remain in effect.
+
+The arrangement is attached to slot positions: reassigning computers between slots changes which computer occupies that rectangle. It does not change the shared sensitivity setting, the operating system's display arrangement, or discover monitor resolution automatically. BOOT menu/CLI slot switching and the companion's relative-mode routing remain available; this custom geometry applies only to firmware-owned absolute mode.
+
+## macOS tracking experiment
+
+`scripts/mac-pointer-observer.c` reads the OS cursor location and the live `HIDMouseAcceleration` parameter. Compile with `clang -Wno-deprecated-declarations scripts/mac-pointer-observer.c -framework ApplicationServices -framework IOKit -o /tmp/mac-pointer-observer`.
+
+With the current Mac selected, seamless enabled, web setup disconnected, and the user ready to leave the mouse still, run `scripts/measure-macos-pointer.py --port PORT --observer /tmp/mac-pointer-observer --output artifacts/macos-absolute-tracking.json`. It replays identical absolute coordinates at low, high, and original HID tracking values, records cursor endpoints, and restores the original tracking value and firmware cursor position in a finally block. The test covers that HID parameter and descriptor on the attached Mac; it does not establish how every macOS per-device setting or acceleration curve behaves. Do not run during normal mouse use.
+
+### Observed result on the attached Mac (2026-09-21)
+
+The seven-position absolute-HID replay landed at identical CoreGraphics desktop coordinates for `HIDMouseAcceleration` values 0.0, 3.0, and the original 0.6875. Maximum low/high endpoint difference was 0.0 desktop points. The setter and getter succeeded and the original value was restored. The receipt is `artifacts/macos-absolute-tracking.json` (local generated artifact). This supports using firmware sensitivity for this absolute descriptor on this Mac. It is not a test of all per-device settings, OS versions, or physical mouse acceleration curves.
+
+
+Screen resolution is edited inside the arrangement: click the pencil beside a screen's dimensions, enter width and height, and choose Done. Drag screens to position them, then save the arrangement. Calibration supplies estimated starting proportions for an unsaved arrangement; it does not measure pixel resolution or replace saved dimensions. Arrange in a row resets visual positions.
+
+The selected screen's speed adjustment remains visible (25–400%, default 100%). Effective speed is shared speed × screen percentage / 100 on both axes; geometry and edge alignment stay unchanged. Existing arrangements migrate with all adjustments at 100%. Calibration and edge travel remain directly accessible.

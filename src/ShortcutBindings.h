@@ -93,11 +93,11 @@ inline unsigned shortcutDestination(int action,unsigned current,uint8_t connecte
 class ShortcutRecorder {
 public:
   enum State { Idle, Armed, Capturing, Ready, Cancelled, Expired };
-  State state=Idle;ShortcutBinding candidate;unsigned target=0;uint32_t started=0,generation=0;
+  State state=Idle;ShortcutBinding candidate;unsigned target=0,kind=0;uint32_t started=0,generation=0;
   uint8_t keys[6]={},modifiers=0,buttons=0;
   bool active() const {return state==Armed||state==Capturing||state==Ready;}
   bool consuming() const {return state==Armed||state==Capturing;}
-  void begin(unsigned action,uint32_t now,uint32_t revision){target=action;started=now;generation=revision;candidate={};state=Armed;_released=!modifiers&&!buttons;for(auto key:keys)if(key)_released=false;}
+  void begin(unsigned action,uint32_t now,uint32_t revision,unsigned inputKind=0){kind=inputKind;target=action;started=now;generation=revision;candidate={};state=Armed;_released=!modifiers&&!buttons;for(auto key:keys)if(key)_released=false;}
   void cancel(){state=Cancelled;}
   void tick(uint32_t now){if(active()&&uint32_t(now-started)>60000)state=Expired;}
   bool keyboard(const uint8_t *input,uint8_t mods){memcpy(keys,input,6);modifiers=mods;return observe();}
@@ -124,13 +124,13 @@ private:
     }
     if(state==Armed&&!keyboard.keys[0]&&!buttons)return true;
     if(state==Capturing){
-      if(candidate.kind==1&&!keyboard.keys[0]){state=Ready;return true;}
+      if(candidate.kind==1&&!keyboard.keys[0]&&!modifiers){state=Ready;return true;}
       if(candidate.kind==2&&!buttons){state=Ready;return true;}
     }
-    if(buttons&&!keyboard.keys[0]){
+    if(kind!=1&&buttons&&!keyboard.keys[0]){
       ShortcutBinding mouse;mouse.kind=2;mouse.modifiers=shortcutModifiers(modifiers);mouse.buttons=buttons;
       if(state==Armed||(candidate.kind==2&&(buttons|candidate.buttons)==buttons&&(mouse.modifiers|candidate.modifiers)==mouse.modifiers)){candidate=mouse;state=Capturing;}
-    }else if(!buttons&&validShortcut(keyboard)){
+    }else if(kind!=2&&!buttons&&validShortcut(keyboard)){
       if(state==Armed||(candidate.kind==1&&(keyCount(keyboard)>keyCount(candidate)||(keyCount(keyboard)==keyCount(candidate)&&!memcmp(keyboard.keys,candidate.keys,6)&&(keyboard.modifiers|candidate.modifiers)==keyboard.modifiers)))){candidate=keyboard;state=Capturing;}
     }
     return true;

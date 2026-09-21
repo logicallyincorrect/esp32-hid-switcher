@@ -4,6 +4,9 @@
 #include "MenuBackend.h"
 #include "DeviceMenu.h"
 #include "InputState.h"
+#include "BleInput.h"
+#include "InputSources.h"
+#include "SerialFrame.h"
 
 class Application {
 public:
@@ -15,6 +18,7 @@ public:
 private:
   struct Report {
     bool mouse = false;
+    uint8_t source=0;
     uint8_t bytes[8] = {};
     MouseReport movement;
     uint32_t received = 0;
@@ -24,6 +28,15 @@ private:
   MenuBackend _backend;
   DeviceMenu<MenuBackend> _menu;
   InputState _input;
+#if HID_BLE_INPUT
+  BleInput _bleInput;
+  InputSources<9> _sources;
+  bool _bleReset=false,_bleCommand=false;
+  char _bleLine[64]={};unsigned _bleLineSize=0;bool _bleLineOverflow=false;
+  static void bleKeyboard(void *,unsigned,const uint8_t *,size_t);
+  static void bleMouse(void *,unsigned,const MouseReport &);
+  static void bleReset(void *);
+#endif
   QueueHandle_t _reports = nullptr;
   portMUX_TYPE _queueLock = portMUX_INITIALIZER_UNLOCKED;
   bool _overflow = false;
@@ -36,6 +49,8 @@ private:
   void select(uint8_t slot);
   bool shortcut(bool mouse);
   void indicators();
+  SerialFrame _serialFrame;
+  void serialRequest(const char *line);
   void serialCommands();
   void discardInput(bool uncertain);
   static void keyboard(void *context, const uint8_t *data, size_t length);

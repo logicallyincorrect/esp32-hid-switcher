@@ -1,0 +1,55 @@
+name: Browser setup installer
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: web-setup-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install platformio==6.1.18
+      - run: sh scripts/test-host.sh
+      - run: node --test tests/web-serial.mjs
+      - run: python3 tests/serial-cli.py
+      - run: python3 tests/package-web.py
+      - run: pio run -e esp32s3_ble_input
+      - name: Restore previous firmware catalog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          history_id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=web-setup-history&per_page=100" --jq 'first(.artifacts[] | select(.expired == false) | .id) // empty')
+          if [ -n "$history_id" ]; then
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${history_id}/zip" > /tmp/web-history.zip
+            python3 scripts/restore-web-history.py /tmp/web-history.zip artifacts/web-setup
+          fi
+      - run: python3 scripts/package-web.py --version "${GITHUB_SHA::12}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-setup-history
+          path: artifacts/web-setup
+          retention-days: 90
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: artifacts/web-setup
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish installer
+        id: deployment
+        uses: actions/deploy-pages@v4

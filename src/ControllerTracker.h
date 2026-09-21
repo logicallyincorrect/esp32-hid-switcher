@@ -1,9 +1,10 @@
 #pragma once
 #include "TimingStats.h"
+#include "BleInputConfig.h"
 struct ControllerTracker {
   struct Packet {uint32_t time=0;uint8_t kind=0;};
   struct Link {uint16_t handle=0xffff;Packet queue[64]{};uint8_t head=0,count=0;uint32_t peak=0;bool desynced=false;ReportSpacing creditSpacing;TimingStats batchSizes;};
-  Link links[3]{};
+  Link links[HID_BLE_INPUT?4:3]{};
   TimingStats windowMouse,windowBatch,windowSpacing;
   TimingStats completed[3]; // other, keyboard, mouse; controller credit-return age
   uint32_t sent=0,returned=0,unmatched=0,overflow=0,discarded=0;
