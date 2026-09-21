@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>HID Switcher quick start</title>
+  <style>
+    @page { size: A4 landscape; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; color: #20342d; font: 10pt/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .page { width: 297mm; height: 210mm; display: grid; grid-template-columns: repeat(4, 1fr); page-break-after: always; }
+    .panel { padding: 15mm 10mm 12mm; border-right: .25mm dashed #aab9ae; overflow: hidden; }
+    .panel:last-child { border-right: 0; }
+    h1 { margin: 0 0 6mm; font-size: 23pt; line-height: 1.05; }
+    h2 { margin: 0 0 4mm; font-size: 15pt; color: #356248; }
+    h3 { margin: 5mm 0 1mm; font-size: 10.5pt; color: #356248; }
+    p { margin: 0 0 3mm; }
+    ol, ul { margin: 2mm 0 4mm 5mm; padding-left: 4mm; }
+    li { margin: 1.5mm 0; }
+    code { background: #edf2ed; padding: .4mm 1mm; border-radius: 1mm; }
+    .badge { display: inline-block; padding: 1mm 2mm; border-radius: 2mm; background: #356248; color: white; font-weight: 700; }
+    .note { border-left: 1mm solid #d39a39; padding-left: 3mm; margin: 4mm 0; }
+    .small { font-size: 8.5pt; color: #52685c; }
+  </style>
+</head>
+<body>
+  <!-- Print duplex, landscape, short-edge binding. Fold each sheet into four vertical panels. -->
+  <section class="page">
+    <div class="panel">
+      <h1>HID Switcher</h1>
+      <p class="badge">One keyboard and mouse · three computers</p>
+      <h3>What you need</h3>
+      <ul><li>Freenove ESP32-S3 board and the supplied case</li><li>USB keyboard and mouse, plus a powered hub if needed</li><li>USB cable connected to the board's UART/programming port</li></ul>
+      <div class="note"><b>Do not erase flash</b> during an update unless you intentionally want to remove pairings, names, shortcuts, and calibration.</div>
+      <h3>First power-up</h3>
+      <p>Connect the board and wait for it to enumerate. The browser setup page is the easiest first-time path and does not require a keyboard already connected.</p>
+    </div>
+    <div class="panel">
+      <h2>1 · Open setup</h2>
+      <ol><li>Open the published setup page from the project README, or serve the packaged <code>artifacts/web-setup</code> folder locally.</li><li>Use Chrome or another browser with Web Serial support.</li><li>Click <b>Connect board</b>, choose the USB serial port, and read the current settings.</li><li>If needed, click <b>Install firmware</b>. Choose a version and approve disconnecting the board for flashing.</li></ol>
+      <h3>Configure outputs</h3>
+      <p>Pair each computer with <b>HID SWITCHER BLE</b>. Give each slot a name. Drag the slot handle to reorder it; the complete slot record moves together.</p>
+      <h3>Configure inputs</h3>
+      <p>USB devices appear automatically. For a BLE keyboard or keyboard/trackpad, choose <b>Add BLE device</b>, scan, select the device, complete pairing, then assign its input to a slot.</p>
+      <p class="small">Only BLE HID devices with supported keyboard or relative-pointer reports can forward input. Proprietary 2.4 GHz devices are not BLE.</p>
+    </div>
+    <div class="panel">
+      <h2>2 · Shortcuts</h2>
+      <p>In the <b>Switching</b> section, click the pencil beside a keyboard or mouse cell. Press the shortcut, release it, and the cell saves automatically. The × clears it.</p>
+      <ul><li><b>Cycle</b> moves to the next connected computer.</li><li><b>Next / Previous</b> move one connected slot.</li><li><b>Slot</b> selects a numbered slot.</li></ul>
+      <h3>Seamless edge switching</h3>
+      <p>Turn it on only after the output layout is ready. Drag the monitor tiles to match the physical desk. Click the pencil beside each resolution and speed to edit values inline; click the checkmark to save.</p>
+      <p>Calibration is optional for the layout, but companion-free switching asks for calibration when a connected slot has no usable measurement. Follow the top-left and bottom-right prompts on each computer, or choose <b>All</b>.</p>
+      <div class="note">Disconnected outputs are skipped. When a slot reconnects, its saved position and dimensions return to the layout.</div>
+    </div>
+    <div class="panel">
+      <h2>3 · Use it</h2>
+      <p>Only the selected computer receives keyboard and mouse input. Select a slot with its shortcut, the BOOT menu, or the web UI.</p>
+      <h3>BLE input recovery</h3>
+      <p>Open <b>Input Devices</b>. A saved device can be reconnected, disconnected, or forgotten. Disconnect before scanning for a replacement. Pairing prompts must be confirmed for the current attempt.</p>
+      <h3>Board menu</h3>
+      <p>Open a blank US-layout text document, turn Caps Lock off, then hold <b>BOOT</b> for three seconds. Press <b>Esc</b> to go back and <b>BOOT</b> to exit.</p>
+      <p class="small">Keep the text document focused while using the menu. The board types prompts into the selected application.</p>
+      <p class="small">Documentation: <code>docs/usb-setup.md</code>, <code>docs/ble-input.md</code>, and <code>docs/absolute-pointer.md</code>.</p>
+    </div>
+  </section>
+  <section class="page">
+    <div class="panel">
+      <h2>Troubleshooting</h2>
+      <h3>No board in Connect board</h3>
+      <p>Use the UART/programming port, try another data cable, close serial monitors, and reconnect. A CH340 UART adapter cannot act as the USB host.</p>
+      <h3>Keyboard or mouse is dead</h3>
+      <p>Check that the hub is powered, the board is connected to the correct USB port, and the selected slot is paired. Test the keyboard directly before replacing the hub.</p>
+    </div>
+    <div class="panel">
+      <h2>BLE pairing problems</h2>
+      <ul><li>Keep the BLE device awake and advertising.</li><li>Forget old bonds on both sides before retrying.</li><li>For a numeric comparison prompt, confirm the same code on both devices.</li><li>If the scan is empty, use <b>Scan all BLE devices</b>; non-connectable advertisers still cannot pair.</li></ul>
+      <p class="small">The BLE input experiment uses one saved wireless input and is separate from the three computer output connections.</p>
+    </div>
+    <div class="panel">
+      <h2>Seamless switching problems</h2>
+      <p>Set the actual pixel dimensions in the monitor tiles. Recalibrate after changing display scaling, mouse DPI, or host pointer settings. Move steadily between corners.</p>
+      <p>If a display is offline, it is deliberately skipped. Reconnect it and refresh the page to restore it to the saved arrangement.</p>
+      <p>Dragging, held keys, and the setup menu temporarily block edge switching.</p>
+    </div>
+    <div class="panel">
+      <h2>Keep this sheet</h2>
+      <p>Firmware and web setup are versioned in the repository. Check the README before upgrading.</p>
+      <h3>Safe update</h3>
+      <ol><li>Connect the board in the web setup page.</li><li>Choose <b>Install firmware</b> and approve the disconnect.</li><li>Leave erase disabled.</li><li>Reconnect and verify that pairings and names remain.</li></ol>
+      <p class="small">For logs and diagnostics, use the BOOT menu's Diagnostics screen or the serial CLI described in <code>docs/usb-setup.md</code>.</p>
+    </div>
+  </section>
+</body>
+</html>
