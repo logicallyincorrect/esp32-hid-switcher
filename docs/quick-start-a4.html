@@ -7,8 +7,8 @@
     @page { size: A4 landscape; margin: 0; }
     * { box-sizing: border-box; }
     html, body { margin: 0; color: #20342d; font: 8.7pt/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    .page { width: 297mm; height: 210mm; display: grid; grid-template-columns: repeat(4, 1fr); page-break-after: always; }
-    .panel { padding: 11mm 8mm 9mm; border-right: .25mm dashed #aab9ae; }
+    .page { width: 297mm; height: 210mm; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); page-break-after: always; min-width: 0; }
+    .panel { min-width: 0; padding: 11mm 8mm 9mm; border-right: .25mm dashed #aab9ae; overflow-wrap: anywhere; }
     .panel:last-child { border-right: 0; }
     h1 { margin: 0 0 4mm; font-size: 20pt; line-height: 1.05; }
     h2 { margin: 0 0 3mm; font-size: 13.5pt; color: #356248; }
