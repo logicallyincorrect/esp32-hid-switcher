@@ -20,6 +20,8 @@ An optional [BLE keyboard/trackpad input experiment](docs/ble-input.md) adds one
 
 Printable case files, measured board dimensions, and assembly instructions are in [stls](stls/README.md).
 
+For a print-ready folded handout, use the two-page [A4 quick-start sheet](docs/quick-start-a4.html) (print landscape, duplex, short-edge binding).
+
 ## Install or update
 
 Identify the correct board and UART port before installation. Use PlatformIO with [platformio.ini](platformio.ini).
