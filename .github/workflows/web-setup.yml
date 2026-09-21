@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install platformio==6.1.18
+      - run: pip install platformio==6.1.19
       - run: sh scripts/test-host.sh
       - run: node --test tests/web-serial.mjs
       - run: python3 tests/serial-cli.py
