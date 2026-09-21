@@ -1,5 +1,6 @@
 #include "UsbHost.h"
 #include "RuntimeHealth.h"
+#include "UsbControlDiagnostics.h"
 
 void UsbHost::begin(Sink sink) {
   assert(!_connections);
@@ -31,6 +32,8 @@ void UsbHost::hostTask(void *context) {
   config.enum_filter_cb = [](const usb_device_desc_t *device, uint8_t *configuration) {
     *configuration = 1;
     const auto kind = device->bDeviceClass;
+    if (usbDiagnosticsEnabled()) Serial.printf("[USB enumerate] vid=%04x pid=%04x class=%02x configs=%u\n",
+                  device->idVendor, device->idProduct, kind, device->bNumConfigurations);
     return kind == 0 || kind == 3 || kind == 9 || kind == 0xef;
   };
   ESP_ERROR_CHECK(usb_host_install(&config));
@@ -44,6 +47,7 @@ void UsbHost::hostTask(void *context) {
     self._usbHeartbeat = millis();
     portEXIT_CRITICAL(&self._lock);
     if (events & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS) usb_host_device_free_all();
+    self.servicePortRecovery();
   }
 }
 
@@ -82,7 +86,8 @@ void UsbHost::track(hid_host_device_handle_t handle, const hid_host_dev_params_t
 void UsbHost::open(hid_host_device_handle_t handle) {
   hid_host_dev_params_t params = {};
   if (hid_host_device_get_params(handle, &params) != ESP_OK) return;
-  track(handle, params, false);
+  // Track only started interfaces. Rejected/closed optional interfaces have no
+  // disconnect callback to retire their handles, so retaining them leaks slots.
   hid_host_device_config_t config = {};
   config.callback = report;
   config.callback_arg = this;
@@ -182,38 +187,66 @@ bool UsbHost::service() {
   _fault = false;
   portEXIT_CRITICAL(&_lock);
   if (pending) _recovery.fault();
+  if (!_recovery.poll(millis())) return false;
+  portENTER_CRITICAL(&_lock);
+  _resetRequested = true;
+  portEXIT_CRITICAL(&_lock);
+  return true;
+}
+
+// Only the USB event task touches port power. In particular, do not race the
+// hub task's reset/debounce/control-transfer handling from the Arduino loop.
+void UsbHost::servicePortRecovery() {
   const uint32_t now = millis();
   if (_portOff) {
-    if (now - _portOffAt >= 100) {
-      if (usb_host_lib_set_root_port_power(true) == ESP_OK) _portOff = false;
-      else { _portOffAt = now; fault(); }
+    usb_host_lib_info_t info = {};
+    if (now - _portOffAt >= 100 && usb_host_lib_info(&info) == ESP_OK && info.num_devices == 0) {
+      if (usb_host_lib_set_root_port_power(true) == ESP_OK) {
+        portENTER_CRITICAL(&_lock);
+        _portOff = false;
+        portEXIT_CRITICAL(&_lock);
+      }
     }
-    return false;
+    return;
   }
-  if (!_recovery.poll(now)) return false;
-  if (usb_host_lib_set_root_port_power(false) == ESP_OK) { _portOff = true; _portOffAt = now; }
-  else fault();
-  return true;
+  portENTER_CRITICAL(&_lock);
+  const bool requested = _resetRequested;
+  portEXIT_CRITICAL(&_lock);
+  if (requested && usb_host_lib_set_root_port_power(false) == ESP_OK) {
+    _portOffAt = now;
+    portENTER_CRITICAL(&_lock);
+    _portOff = true;
+    _resetRequested = false;
+    portEXIT_CRITICAL(&_lock);
+  }
 }
 
 bool UsbHost::healthy() {
   portENTER_CRITICAL(&_lock);
   const uint32_t usb = _usbHeartbeat, hid = _hidHeartbeat;
+  const bool restarting = _portOff || _resetRequested;
   portEXIT_CRITICAL(&_lock);
   const uint32_t now = millis();
-  return usb && hid && now - usb < 2000 && now - hid < 2000 && !_portOff;
+  return usb && hid && now - usb < 2000 && now - hid < 2000 && !restarting;
 }
 
 void UsbHost::appendStatus(JsonObject out) {
+  usb_host_lib_info_t hostInfo = {};
+  const auto infoResult = usb_host_lib_info(&hostInfo);
   Interface snapshot[16];
   uint32_t transfer, open, drops;
+  bool restarting;
   portENTER_CRITICAL(&_lock);
   memcpy(snapshot, _interfaces, sizeof(snapshot));
   transfer = _transferErrors; open = _openErrors; drops = _eventDrops;
+  restarting = _portOff || _resetRequested;
   portEXIT_CRITICAL(&_lock);
   out["healthy"] = healthy(); out["transfer_errors"] = transfer; out["open_errors"] = open;
+  // 'healthy' is task liveness, not proof that a hub or HID device enumerated.
+  out["tasks_running"] = healthy();
+  if (infoResult == ESP_OK) out["host_devices"] = hostInfo.num_devices;
   out["event_drops"] = drops; out["recoveries"] = _recovery.attempts;
-  out["recovering"] = _portOff || _recovery.pending;
+  out["recovering"] = restarting || _recovery.pending;
   auto list = out["interfaces"].to<JsonArray>();
   for (const auto &entry : snapshot) if (entry.handle) {
     auto item = list.add<JsonObject>();

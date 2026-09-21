@@ -1,4 +1,8 @@
 #pragma once
+#include "BleInputConfig.h"
+#if HID_BLE_INPUT
+#include <esp_random.h>
+#endif
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <NimBLEHIDDevice.h>
@@ -15,19 +19,50 @@
 #include "ShortcutBindings.h"
 #include "ReconnectGuard.h"
 #include "EdgeSwitch.h"
+#include "PointerMode.h"
+#include "AbsolutePointer.h"
+#include "SharedPointerScale.h"
+#include "PointerCalibration.h"
+#include "CalibrationFeedback.h"
 
 class BleHid : public NimBLEServerCallbacks, public NimBLECharacteristicCallbacks {
 public:
-  BleHid() : _router(notifyOne, this) {}
+  BleHid() : _router(notifyOne, this, PointerMode::absolute) {}
   BleHid(const BleHid &) = delete;
   BleHid &operator=(const BleHid &) = delete;
   void begin(uint8_t slot);
   void loop();
   void flushInput();
-  bool edgeMouse(const MouseReport &report,uint32_t received,bool blocked);
+  bool edgeMouse(MouseReport &report,uint32_t received,bool blocked);
   void serviceEdges(bool allowed);
+  bool takeCalibrationMenuReturn(){
+    const bool pending=_calibrationMenuReturn;_calibrationMenuReturn=false;
+    return pending&&!calibrationActive()&&selected()==_calibration.origin&&isConnected()&&_connectionRevision==_calibrationMenuSession;
+  }
+  bool calibrationActive()const{return _calibration.active();}
+  unsigned calibrationStage()const{return unsigned(_calibration.stage);}
+  uint8_t calibrationReady()const;
+  bool beginCalibration(uint8_t mask,bool enableAfter=false,bool textFeedback=true);
+  const char *calibrationResult()const{return calibrationActive()?"running":(_calibrationFailed?"failed":(_calibrationComplete?"complete":"idle or cancelled"));}
+  bool seamlessEnabled()const{return _seamlessEnabled;}
+  bool setSeamlessEnabled(bool enabled);
+  uint8_t calibrationNeeded()const;
+  bool useAbsolutePointer()const{return PointerMode::absoluteOnly||(PointerMode::absolute&&_seamlessEnabled);}
+  void cancelCalibration(bool failed=false,bool complete=false);
+  void calibrationMouse(const MouseReport &report,uint32_t received);
+  uint32_t calibrationColor(uint32_t now)const;
+  bool absoluteMode()const{return PointerMode::absolute;}
+  unsigned pointerValue(unsigned slot,unsigned field)const{return slot<3&&field<2?_pointerTuning[slot].get(field):100;}
+  bool setPointerValue(unsigned slot,unsigned field,unsigned value);
   unsigned edgeThreshold()const{return _edges.threshold();}
   bool setEdgeThreshold(unsigned value);
+  unsigned sharedSpeed()const{return _sharedSpeed;}
+  bool setSharedSpeed(unsigned value);
+  bool probePointer(int x,int y);
+  void appendPointerPosition(JsonObject out)const;
+
+  void appendLayout(JsonObject out)const;
+  bool setLayout(JsonVariantConst request,String &error);
 
   const String &deviceName() const { return _deviceName; }
   bool setDeviceName(const String &name);
@@ -54,7 +89,7 @@ public:
   bool connected(unsigned slot) const { return _router.connected(slot); }
   unsigned selected() const { return _router.selected(); }
   bool configure(const uint8_t order[3], const char names[3][33], uint32_t generation);
-  void releaseAll() { _pendingMouse.clear(); _pendingKeyboard.clear(); _router.releaseAll(); }
+  void releaseAll() { _calibrationPending.clear();_absolutePointer.reset(millis()); _pendingMouse.clear(); _pendingKeyboard.clear(); _router.releaseAll(); }
 private:
   enum Kind : uint8_t { Connected, Authenticated, Disconnected, Subscribed, TimingUpdated, EdgeSample, EdgeSubscription };
   struct Event {
@@ -82,7 +117,26 @@ private:
     bool edgeSubscribed=false;
     uint32_t edgeSentEpoch=0,edgeSentAt=0;
   };
-  MousePending _pendingMouse;
+  MousePending _pendingMouse{PointerMode::absolute};
+  AbsolutePointer _absolutePointer;
+  unsigned _sharedSpeed=SharedPointerScale::defaultSpeed;
+  PointerTuning _pointerTuning[3];
+  PointerCalibration _calibration;
+  CalibrationFeedback _calibrationFeedback;
+  int _calibrationNext=-1;
+  uint8_t _calibrationRequested=0,_calibrationSaved=0;
+  bool _calibrationEnableFailed=false;
+  bool calibrationMessage(const String &message,int next);
+  void serviceCalibrationFeedback();
+  MousePending _calibrationPending;
+  uint32_t _calibrationLastSend=0,_calibrationFeedbackAt=0;
+  bool _calibrationComplete=false,_calibrationFailed=false,_enableAfterCalibration=false,_seamlessEnabled=false;
+  uint32_t _calibrationSession=0,_calibrationMenuSession=0;
+  bool _calibrationMenuReturn=false,_calibrationTextFeedback=true;
+  void serviceCalibration();
+  bool saveCalibration();
+  void loadPointerTuning();
+  bool pointerKey(unsigned slot,char key[16])const;
   ReportSpacing _mouseArrivalSpacing,_mouseSubmissionSpacing;
   TimingStats _mouseBridgeWait,_mouseOldestWait,_mouseNewestWait;
   KeyboardPending _pendingKeyboard;
@@ -115,7 +169,7 @@ private:
   NimBLEServer *_server = nullptr;
   NimBLEHIDDevice *_hid = nullptr;
   NimBLECharacteristic *_input = nullptr;
-  NimBLECharacteristic *_mouse = nullptr;
+  NimBLECharacteristic *_mouse = nullptr,*_relativeMouse=nullptr;
   MultiHostRouter _router;
   EdgeSwitch _edges;
   uint32_t _edgeConfigGeneration=0;
@@ -131,9 +185,12 @@ private:
   void onConnParamsUpdate(NimBLEConnInfo &info) override {enqueue(TimingUpdated,info);}
   void onConnect(NimBLEServer *, NimBLEConnInfo &info) override { enqueue(Connected, info); }
   void onDisconnect(NimBLEServer *, NimBLEConnInfo &info, int) override { enqueue(Disconnected, info); }
+#if HID_BLE_INPUT
+  uint32_t onPassKeyDisplay()override{const uint32_t key=esp_random()%1000000;Serial.printf("[BLE computer pairing] Enter %06lu on the computer.\n",(unsigned long)key);return key;}
+#endif
   void onAuthenticationComplete(NimBLEConnInfo &info) override { enqueue(Authenticated, info); }
   void onSubscribe(NimBLECharacteristic *characteristic, NimBLEConnInfo &info, uint16_t sub) override {
     if(characteristic==_edgeStatus)enqueue(EdgeSubscription,info,sub);
-    else enqueue(Subscribed, info, sub, characteristic==_mouse?2:1);
+    else enqueue(Subscribed, info, sub, characteristic==_mouse?2:(characteristic==_relativeMouse?3:1));
   }
 };

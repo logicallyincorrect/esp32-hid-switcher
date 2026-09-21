@@ -624,14 +624,20 @@ static void client_event_cb(const usb_host_client_event_msg_t *event,
  */
 static esp_err_t
 hid_host_interface_claim_and_prepare_transfer(hid_iface_t *iface) {
-  HID_RETURN_ON_ERROR(usb_host_interface_claim(s_hid_driver->client_handle,
-                                               iface->parent->dev_hdl,
-                                               iface->dev_params.iface_num, 0),
-                      "Unable to claim Interface");
-
+  // Allocate before claiming: a failed allocation must not strand hardware
+  // channels in a claimed interface whose state still says IDLE.
   HID_RETURN_ON_ERROR(
       usb_host_transfer_alloc(iface->ep_in_mps, 0, &iface->in_xfer),
       "Unable to allocate transfer buffer for EP IN");
+
+  const esp_err_t claimed = usb_host_interface_claim(s_hid_driver->client_handle,
+                                                     iface->parent->dev_hdl,
+                                                     iface->dev_params.iface_num, 0);
+  if (claimed != ESP_OK) {
+    ESP_ERROR_CHECK(usb_host_transfer_free(iface->in_xfer));
+    iface->in_xfer = NULL;
+    return claimed;
+  }
 
   // Change state
   iface->state = HID_INTERFACE_STATE_READY;

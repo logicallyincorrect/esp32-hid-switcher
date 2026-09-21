@@ -16,17 +16,23 @@ Connect the hub to the native USB/OTG port. Use the UART/COM port for power and 
 
 A CH340 USB-to-UART port cannot operate as a USB host.
 
+An optional [BLE keyboard/trackpad input experiment](docs/ble-input.md) adds one wireless input peripheral alongside USB, using a separate four-connection build. It is not enabled in the normal firmware.
+
+Printable case files, measured board dimensions, and assembly instructions are in [stls](stls/README.md).
+
 ## Install or update
 
 Identify the correct board and UART port before installation. Use PlatformIO with [platformio.ini](platformio.ini).
 
 ```sh
-pio run
+pio run -e esp32s3_usb_ble_absolute
 pio device list
-pio run -t upload --upload-port YOUR_UART_PORT
+pio run -e esp32s3_usb_ble_absolute -t upload --upload-port YOUR_UART_PORT
 ```
 
-All firmware updates use USB. There is no Wi-Fi or web configuration page. An optional macOS companion adds pointer-edge switching; setup remains on the device. The existing partition layout remains compatible with saved settings. Do not erase flash unless you want to remove pairings and settings.
+These commands install the companion-free absolute-pointer build. Use `-e esp32s3_usb_ble` instead for relative-only firmware with optional macOS companion routing. The `esp32s3_usb_ble_absolute_only` environment is a diagnostic fallback, not the full calibration-capable firmware.
+
+All firmware updates use USB. The [browser setup page and serial CLI](docs/usb-setup.md) can configure the device over its UART/programming port, including first-time BLE keyboard pairing without an existing keyboard. The BOOT menu remains available; no Wi-Fi is needed. The existing partition layout remains compatible with saved settings. Do not erase flash unless you want to remove pairings and settings.
 
 ## Connect computers
 
@@ -40,13 +46,29 @@ Cmd means Command on macOS or Windows/Super on other keyboards. Left and right m
 
 ## Switch at the edge of the screen
 
+Both options provide seamless edge switching, **off by default**. Choose the firmware for the behavior you want:
+
+| | Companion-free mode | macOS companion mode |
+| --- | --- | --- |
+| Firmware environment | `esp32s3_usb_ble_absolute` | `esp32s3_usb_ble` |
+| Software on each computer | None | macOS companion on each source Mac |
+| Pointer output | Absolute when enabled; relative otherwise | Relative |
+| Setup | Enable in menu; calibrate each slot or choose All | Install companion, then enable in menu |
+| Screen information | Two-corner calibration, one display per computer | Companion reports desktop edges; shared monitor boundaries stay on the same computer |
+| Pointer after switching | Opposite edge, retaining normalized vertical position | Destination pointer stays where it was |
+| Mouse controls | Five buttons and vertical scroll in absolute mode | Eight buttons and horizontal/vertical scroll |
+
+Both use slots 1 → 2 → 3 from left to right, skip disconnected computers, and do not wrap at an outer edge. Dragging, held keys and configuration block automatic switching. Keyboard/mouse switching shortcuts work in either mode.
+
+For companion-free mode, select **6 Seamless switching → 1 Enable**. Missing calibration starts the two-corner procedure before switching can turn on. Recalibrate one slot or all connected computers through **6 → 3 Calibrate pointer**. The integrated build works on both tested computers, including absolute dragging. See [calibration instructions and limitations](docs/absolute-pointer.md).
+
 Download the companion ZIP from [Releases](https://github.com/logicallyincorrect/esp32-hid-switcher/releases), or get a development build from [Actions](https://github.com/logicallyincorrect/esp32-hid-switcher/actions/workflows/companion-macos.yml). See [build and installation instructions](companion/README.md).
 
 An optional [macOS companion](companion/README.md) lets you push the pointer against the right edge to select the next computer, or the left edge to select the previous one. Install it on each Mac from which you want to switch at a screen edge. Disconnected computers are skipped. Slots run left to right as 1, 2, 3. Edge switching stops at either end and does not wrap. Switching does not require a companion on the destination. Push outward after reaching an edge to switch input (100 mouse counts by default); the destination pointer stays where it was.
 
 Shared monitor boundaries stay on the same computer. Dragging, held keys, and the setup menu disable edge switching. Keyboard and mouse shortcuts remain available.
 
-This feature requires the companion and updated firmware. Hardware validation is pending.
+The normal build requires the companion, updated firmware, and **6 Seamless switching → 1 Enable**. Hardware validation is pending.
 
 ## Configure the device
 
@@ -70,6 +92,9 @@ Use a text editor, not a command shell. Keep the document selected until you exi
 | Bluetooth name | Change the device name |
 | Diagnostics | Show USB status, Bluetooth errors, and report times |
 | Edge switching | Set the outward movement distance (1-10000 counts) |
+| Seamless switching | Opt in/out; calibrate one slot or All in the absolute build |
+| Pointer tuning | Advanced per-computer axis percentages (absolute build) |
+| BLE input devices | Scan, select, pair, reconnect, disconnect, or forget a wireless keyboard/trackpad (experimental BLE input build) |
 
 To change the edge distance, select **5 Edge switching**, enter a value, press Enter, then `y`. The value applies immediately and stays saved after restart.
 
@@ -120,13 +145,13 @@ Also forget HID SWITCHER BLE in that computer's Bluetooth settings before pairin
 
 GPIO2 flashes the selected slot number. The RGB LED shows blue/green/purple for slots 1/2/3. A steady light means ready; a flashing light means disconnected.
 
-Initial pairing does not require the menu. Use the default Slot shortcut to select an empty slot. If Bluetooth is unavailable, use UART at 115200 baud: `1`/`2`/`3` selects a slot, `?` shows status, and `u` restarts USB devices.
+Initial pairing does not require the menu. Use the default Slot shortcut to select an empty slot. If Bluetooth is unavailable, use UART at 115200 baud: `1`/`2`/`3` selects a slot, `?` shows status, `u` restarts USB devices, and `v` toggles verbose USB diagnostics (off by default).
 
 ## Limits and tests
 
 Tested hardware: Moonlander, Logitech MX Master 3S receiver, USB hub, and two Macs. Three simultaneous computers and other operating systems require more tests.
 
-Connect your keyboard and mouse directly or through one USB hub. Hubs cannot be chained together. Keyboards must support sending up to six held keys at once, plus modifier keys such as Ctrl and Shift. Mice with up to eight buttons are supported.
+Connect your keyboard and mouse directly or through one USB hub. Hubs cannot be chained together. Keyboards must support sending up to six held keys at once, plus modifier keys such as Ctrl and Shift. Relative mode supports eight mouse buttons and horizontal/vertical scrolling. Absolute mode currently supports five mouse buttons and vertical scrolling.
 
 Media keys, touchscreens, and drawing tablets are not supported. Vendor-specific configuration protocols, including HID++, are not supported yet.
 
@@ -134,7 +159,7 @@ Menu text requires the US keyboard layout and Caps Lock off. Normal input does n
 
 ```sh
 sh scripts/test-host.sh
-pio run
+pio run -e esp32s3_usb_ble -e esp32s3_usb_ble_absolute
 python3 tests/partition-layout.py
 ```
 

@@ -10,21 +10,23 @@ class MousePending {
   Entry entries[32]{};
   size_t head=0,count=0;
   uint8_t lastButtons=0;
+  bool absolute=false;
   static int32_t add(int32_t a,int32_t b) {
     const int64_t sum=int64_t(a)+b;
     return sum>1000000?1000000:(sum< -1000000?-1000000:int32_t(sum));
   }
   static int32_t limit(int32_t v,int32_t max) { return v>max?max:(v< -max?-max:v); }
 public:
+  explicit MousePending(bool absolute=false):absolute(absolute){}
   void clear() {head=count=0;lastButtons=0;}
   bool push(const MouseReport &r,uint32_t received=0) {
-    if(!count&&r.buttons==lastButtons&&!r.x&&!r.y&&!r.wheel&&!r.pan)return true;
+    if(!absolute&&!count&&r.buttons==lastButtons&&!r.x&&!r.y&&!r.wheel&&!r.pan)return true;
     size_t tail=(head+count-1)%32;
     if(!count||entries[tail].buttons!=r.buttons) {
       if(count==32)return false;
       tail=(head+count++)%32;entries[tail]={};entries[tail].buttons=r.buttons;entries[tail].oldest=received;
     }
-    auto &e=entries[tail];e.newest=received;e.x=add(e.x,r.x);e.y=add(e.y,r.y);
+    auto &e=entries[tail];e.newest=received;e.x=absolute?r.x:add(e.x,r.x);e.y=absolute?r.y:add(e.y,r.y);
     e.wheel=add(e.wheel,r.wheel);e.pan=add(e.pan,r.pan);return true;
   }
   uint32_t oldest()const{return count?entries[head].oldest:0;}
@@ -35,8 +37,8 @@ public:
   }
   void accepted(const MouseReport &r) {
     if(!count)return;
-    auto &e=entries[head];e.x-=r.x;e.y-=r.y;e.wheel-=r.wheel;e.pan-=r.pan;
+    auto &e=entries[head];if(!absolute){e.x-=r.x;e.y-=r.y;}e.wheel-=r.wheel;e.pan-=r.pan;
     lastButtons=r.buttons;
-    if(!e.x&&!e.y&&!e.wheel&&!e.pan){head=(head+1)%32;--count;}
+    if((absolute||(!e.x&&!e.y))&&!e.wheel&&!e.pan){head=(head+1)%32;--count;}
   }
 };

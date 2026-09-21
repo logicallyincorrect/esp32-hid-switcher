@@ -1,0 +1,240 @@
+{
+  "status": "CAD checked; physical fit, slicing and loads untested",
+  "revision": "Heavy straight snap springs with underside ribs for infrequent opening; unchanged base and buttons",
+  "board": {
+    "variant": "Freenove ESP32-S3 WROOM Lite, FNK0099, 16 MB, no camera connector",
+    "dimension_status": "User caliper dimensions; latest approximate 24.5 mm across-row pin spacing interpreted as centre-to-centre, pin width 0.65 mm.",
+    "overall_length": 56.95,
+    "pcb_length": 50.8,
+    "pcb_width": 28.05,
+    "pcb_thickness": 1.5,
+    "pcb_bottom_z": 11.0,
+    "header_row_x": 12.25,
+    "header_first_y": 1.27,
+    "header_pitch": 2.54,
+    "header_count": 20,
+    "header_plastic_height": 2.61,
+    "pin_length_below_pcb": 7.85,
+    "button_y": 12.8,
+    "button_height_above_pcb": 2.03,
+    "button_rest_gap": 0.5,
+    "usb_shell_width": 8.93,
+    "usb_shell_height": 3.1,
+    "usb_shell_length": 7.5,
+    "usb_front_y": 0.0,
+    "module_width": 18.0,
+    "module_length": 25.5,
+    "module_height": 3.0,
+    "reset_x_from_left": 5.22,
+    "boot_x_from_left": 22.88,
+    "measured_fields": [
+      "overall_length",
+      "pcb_length",
+      "pcb_width",
+      "pcb_thickness",
+      "pin_length_below_pcb",
+      "reset_x_from_left",
+      "boot_x_from_left",
+      "button_y",
+      "button_height_above_pcb",
+      "header_plastic_height",
+      "usb_left_x_from_left",
+      "usb_right_x_from_left",
+      "usb_shell_width",
+      "usb_shell_height",
+      "usb_front_y",
+      "module_height",
+      "pin_width"
+    ],
+    "measurement_notes": "2026-09-19: X measured from left PCB edge with USB toward viewer. Common button Y=12.8 and unpressed height=2.03. Initial 2.5 mm header spacing interpreted as adjacent-pin pitch. Latest user measurement: pins 0.65 mm wide and rows about 24.5 mm apart, interpreted as centre-to-centre; replaces the prior 23.4 mm fit correction. Component maximum 3 mm, USB shell height 3.1 mm modelled separately.",
+    "usb_left_x_from_left": 8.75,
+    "usb_right_x_from_left": 19.2,
+    "pin_width": 0.65
+  },
+  "parts": {
+    "base": {
+      "valid_brep": true,
+      "solids": 1,
+      "watertight": true,
+      "bounds_mm": [
+        38.0,
+        64.95000076293945,
+        22.5
+      ],
+      "volume_mm3": 14663.838748706796
+    },
+    "lid": {
+      "valid_brep": true,
+      "solids": 1,
+      "watertight": true,
+      "bounds_mm": [
+        38.0,
+        64.95000076293945,
+        12.149999618530273
+      ],
+      "volume_mm3": 5822.441466889109
+    }
+  },
+  "clearances_mm": {
+    "pin_to_floor": 1.1500000000000004,
+    "button_rest": 0.5,
+    "snap_engagement": 2.0,
+    "board_x_play_each_side": 0.15,
+    "board_y_play_each_end": 0.05,
+    "catch_vertical_play": 0.2,
+    "button_stop_at_base_ramp": 1.1999999999999993
+  },
+  "button_stop_contact_mm3": {
+    "-1": {
+      "at_1_19_mm": 0,
+      "at_1_21_mm": 0.012000000000003999
+    },
+    "1": {
+      "at_1_19_mm": 0,
+      "at_1_21_mm": 0.009995041782041601
+    }
+  },
+  "feature_dimensions_mm": {
+    "bearing_rail_width": 1.6,
+    "hold_down_section": [
+      1.5,
+      3.2
+    ],
+    "snap_count": 4,
+    "snap_width": 8.0,
+    "snap_projection": 4.5,
+    "roof_spring_count": 4,
+    "roof_spring_leg_width": 3.0,
+    "spring_underside_rib_width": 1.6,
+    "spring_underside_rib_height": 0.8,
+    "spring_shape": "straight",
+    "spring_free_length": 16.5,
+    "spring_plan_root_radius": 1.2,
+    "spring_envelope_length": 17.5,
+    "spring_inward_relief": 2.4,
+    "snap_root_thickness": 1.6,
+    "snap_tip_thickness": 1.6,
+    "snap_root_fillet_radius": 0.6,
+    "release_window_width": 9,
+    "release_window_height": 3,
+    "vent_count": 12,
+    "vent_width": 2,
+    "vent_height": 5,
+    "R_and_USB_stroke": 0.8,
+    "B_stencil_bridge": 0.8,
+    "button_spring_count": 2,
+    "button_spring_thickness": 2.0,
+    "button_paddle_thickness": 1.2,
+    "button_spring_leg_width": 2.0,
+    "button_perimeter_clearance": 0.4,
+    "button_return_centre_y": 23.5,
+    "button_return_outer_radius": 2.8,
+    "button_return_inner_radius": 0.8,
+    "peg_diameter": 2.6,
+    "button_stop_ramp_degrees": 45
+  },
+  "interference_mm3": {
+    "base_vs_lid": 0,
+    "base_vs_pcb": 0,
+    "lid_vs_pcb": 0,
+    "base_vs_module": 0,
+    "lid_vs_module": 0,
+    "base_vs_reset": 0,
+    "lid_vs_reset": 0,
+    "base_vs_usb_reset": 0,
+    "lid_vs_usb_reset": 0,
+    "base_vs_header_reset": 0,
+    "lid_vs_header_reset": 0,
+    "base_vs_pins_reset": 0,
+    "lid_vs_pins_reset": 0,
+    "base_vs_boot": 0,
+    "lid_vs_boot": 0,
+    "base_vs_usb_boot": 0,
+    "lid_vs_usb_boot": 0,
+    "base_vs_header_boot": 0,
+    "lid_vs_header_boot": 0,
+    "base_vs_pins_boot": 0,
+    "lid_vs_pins_boot": 0
+  },
+  "latch_retention_interference_mm3": {
+    "-1,23.0": {
+      "seated": 0,
+      "lift_0_35mm": 2.400000000000034,
+      "inward_release_2_2mm_swept": 0,
+      "catch_after_0_4mm_engagement_loss": 1.920000000000029
+    },
+    "-1,53.0": {
+      "seated": 0,
+      "lift_0_35mm": 2.400000000000034,
+      "inward_release_2_2mm_swept": 0,
+      "catch_after_0_4mm_engagement_loss": 1.920000000000029
+    },
+    "1,23.0": {
+      "seated": 0,
+      "lift_0_35mm": 2.400000000000034,
+      "inward_release_2_2mm_swept": 0,
+      "catch_after_0_4mm_engagement_loss": 1.9200000000000288
+    },
+    "1,53.0": {
+      "seated": 0,
+      "lift_0_35mm": 2.400000000000034,
+      "inward_release_2_2mm_swept": 0,
+      "catch_after_0_4mm_engagement_loss": 1.9200000000000288
+    }
+  },
+  "independent_spring_topology": {
+    "severed_roots": 4,
+    "resulting_solids": 5,
+    "distinct_spring_with_one_tooth_each": 4,
+    "physical_deflection_simulated": false
+  },
+  "independent_button_topology": {
+    "severed_roots": 2,
+    "resulting_solids": 3,
+    "one_peg_per_button": true,
+    "physical_deflection_simulated": false
+  },
+  "board_vertical_insertion_interference_mm3": {
+    "pcb": 0,
+    "module": 0,
+    "reset": 0,
+    "usb_reset": 0,
+    "header_reset": 0,
+    "pins_reset": 0,
+    "boot": 0,
+    "usb_boot": 0,
+    "header_boot": 0,
+    "pins_boot": 0
+  },
+  "board_xy_play_interference_mm3": {
+    "-0.14,-0.04": 0,
+    "-0.14,0": 0,
+    "-0.14,0.04": 0,
+    "0,-0.04": 0,
+    "0,0": 0,
+    "0,0.04": 0,
+    "0.14,-0.04": 0,
+    "0.14,0": 0,
+    "0.14,0.04": 0
+  },
+  "zip_tie_slots_removed": true,
+  "not_validated": [
+    "Unmeasured USB shell depth and module footprint",
+    "Printed tolerances",
+    "Slicer toolpaths/bridging",
+    "Snap and actuator fatigue/force",
+    "RF performance"
+  ],
+  "snap_test_coupons": {
+    "snap-test-base": {
+      "watertight": true,
+      "single_solid": true,
+      "volume_mm3": 3290.8800638832868
+    },
+    "snap-test-lid": {
+      "watertight": true,
+      "single_solid": true,
+      "volume_mm3": 745.6157289876477
+    }
+  }
+}

@@ -1,4 +1,5 @@
 #include "BleHid.h"
+#include "BleInputConfig.h"
 #include "Board.h"
 #include "ForgetPairing.h"
 #include <nimble/nimble/host/include/host/ble_store.h>
@@ -11,23 +12,7 @@
 static_assert(MYNEWT_VAL(BLE_SM_MAX_PROCS)>=3,"Need one security procedure per host");
 static_assert(MYNEWT_VAL(BLE_STORE_MAX_CCCDS)>=12,"Need persistent subscriptions for all hosts");
 
-// One keyboard report ID, six keys plus modifiers. No shared live report value.
-static uint8_t reportMap[] = {
-  0x05,0x01, 0x09,0x06, 0xa1,0x01, 0x85,0x01,
-  0x05,0x07, 0x19,0xe0, 0x29,0xe7, 0x15,0x00, 0x25,0x01,
-  0x75,0x01, 0x95,0x08, 0x81,0x02,
-  0x95,0x01, 0x75,0x08, 0x81,0x01,
-  0x95,0x05, 0x75,0x01, 0x05,0x08, 0x19,0x01, 0x29,0x05, 0x91,0x02,
-  0x95,0x01, 0x75,0x03, 0x91,0x01,
-  0x95,0x06, 0x75,0x08, 0x15,0x00, 0x26,0xff,0x00,
-  0x05,0x07, 0x19,0x00, 0x2a,0xff,0x00, 0x81,0x00, 0xc0,
-  // Mouse: 8 buttons, signed 16-bit relative X/Y, wheel and horizontal pan.
-  0x05,0x01,0x09,0x02,0xa1,0x01,0x85,0x02,0x09,0x01,0xa1,0x00,
-  0x05,0x09,0x19,0x01,0x29,0x08,0x15,0x00,0x25,0x01,0x95,0x08,0x75,0x01,0x81,0x02,
-  0x05,0x01,0x09,0x30,0x09,0x31,0x16,0x01,0x80,0x26,0xff,0x7f,0x75,0x10,0x95,0x02,0x81,0x06,
-  0x09,0x38,0x15,0x81,0x25,0x7f,0x75,0x08,0x95,0x01,0x81,0x06,
-  0x05,0x0c,0x0a,0x38,0x02,0x95,0x01,0x81,0x06,0xc0,0xc0
-};
+#include "HidReportMap.h"
 
 void BleHid::begin(uint8_t slot) {
   _events = xQueueCreate(32, sizeof(Event));
@@ -48,6 +33,13 @@ void BleHid::begin(uint8_t slot) {
     }
     if(!saveConfig(_config)){Serial.println("[Config] Cannot save slot assignments");abort();}
   }
+  const size_t layoutSize=_prefs.getBytesLength("monitor-layout");
+  if(layoutSize==sizeof(MonitorLayout)||layoutSize==sizeof(MonitorLayout::Legacy)){
+    uint8_t bytes[sizeof(MonitorLayout)];
+    if(_prefs.getBytes("monitor-layout",bytes,layoutSize)==layoutSize)_absolutePointer.layout.load(bytes,layoutSize);
+  }
+  _sharedSpeed=_prefs.getUInt("pointer-speed",SharedPointerScale::defaultSpeed);
+  if(!SharedPointerScale::valid(_sharedSpeed))_sharedSpeed=SharedPointerScale::defaultSpeed;
   _edges.setThreshold(_prefs.getUInt("edge-distance",EdgeSettings::defaultDistance),millis());
   // An interrupted timing probe stays disabled across reboot; normal pairing
   // and input still work. Do not repeatedly trigger a controller fault.
@@ -57,13 +49,17 @@ void BleHid::begin(uint8_t slot) {
     if(_prefs.getBytes("shortcuts",&saved,sizeof(saved))==sizeof(saved)&&validShortcuts(saved))_shortcuts=saved;
   }
   applyIdentities();
+  _seamlessEnabled=_prefs.getBool("seamless",false);
+  _router.absoluteOutput(useAbsolutePointer());
   _router.select(_config.selected);
+  _absolutePointer.select(_config.selected,millis());
   _deviceName=_prefs.getString("ble-name",Board::defaultName);
   if(!validDeviceName(_deviceName.c_str(),_deviceName.length()))_deviceName=Board::defaultName;
   NimBLEDevice::init(_deviceName.c_str());
   for(unsigned i=0;i<3;++i)if(_config.slots[i].assigned==2)forgetComputer(i);
   Serial.printf("[BLE diagnostic] restored bonds=%u\n",NimBLEDevice::getNumBonds());
-  // The bridge has no display or passkey entry UI. Use encrypted bonded pairing.
+  // Destination pairing must also work before an input keyboard is usable.
+  // The BLE input worker temporarily enables passkey display for its pairing.
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
   NimBLEDevice::setSecurityAuth(true, false, true);
   _server = NimBLEDevice::createServer();
@@ -81,13 +77,38 @@ void BleHid::begin(uint8_t slot) {
   _hid->getOutputReport(1)->setValue(uint8_t(0));
   _mouse=_hid->getInputReport(2);
   _mouse->setCallbacks(this);
-  _mouse->setValue(empty,7);
+  const uint8_t initialMouse[7]={0,0,uint8_t(PointerMode::absolute?64:0),0,uint8_t(PointerMode::absolute?64:0),0,0};
+  _mouse->setValue(initialMouse,PointerMode::absolute?6:7);
+#if HID_ABSOLUTE_POINTER && !HID_ABSOLUTE_ONLY_TEST
+  {
+    // Separate HID service, like separate USB interfaces on NanoKVM. Do not
+    // instantiate another NimBLEHIDDevice: Device Information is single-instance.
+    auto relativeHid=_server->createService(NimBLEUUID(uint16_t(0x1812)));
+    const uint8_t info[4]={0x11,0x01,0,1};
+    relativeHid->createCharacteristic(NimBLEUUID(uint16_t(0x2a4a)),NIMBLE_PROPERTY::READ)->setValue(info,sizeof(info));
+    relativeHid->createCharacteristic(NimBLEUUID(uint16_t(0x2a4b)),NIMBLE_PROPERTY::READ)->setValue(relativeReportMap,sizeof(relativeReportMap));
+    relativeHid->createCharacteristic(NimBLEUUID(uint16_t(0x2a4c)),NIMBLE_PROPERTY::WRITE_NR);
+    _relativeMouse=relativeHid->createCharacteristic(NimBLEUUID(uint16_t(0x2a4d)),NIMBLE_PROPERTY::READ|NIMBLE_PROPERTY::READ_ENC|NIMBLE_PROPERTY::NOTIFY);
+    const uint8_t reference[2]={3,1};
+    _relativeMouse->createDescriptor(NimBLEUUID(uint16_t(0x2908)),NIMBLE_PROPERTY::READ|NIMBLE_PROPERTY::READ_ENC)->setValue(reference,sizeof(reference));
+    _relativeMouse->setCallbacks(this);_relativeMouse->setValue(empty,7);
+  }
+#endif
   auto edgeService=_server->createService(EdgeProtocol::service);
   _edgeSample=edgeService->createCharacteristic(EdgeProtocol::sample,NIMBLE_PROPERTY::WRITE|NIMBLE_PROPERTY::WRITE_ENC,EdgeProtocol::size);
   _edgeStatus=edgeService->createCharacteristic(EdgeProtocol::status,NIMBLE_PROPERTY::NOTIFY);
   _edgeSample->setCallbacks(this);_edgeStatus->setCallbacks(this);
   _edges.epoch=esp_random()|1u;
   _server->start();
+  // Invalidate cached report semantics on either build-mode transition.
+  if(_prefs.getBool("abs-report",false)!=PointerMode::absolute){
+    _server->sendServiceChangedIndication();
+    _prefs.putBool("abs-report",PointerMode::absolute);
+  }
+  const unsigned reportVersion=PointerMode::absoluteOnly?7:(PointerMode::absolute?8:0);
+  if(_prefs.getUInt("pointer-map",0)!=reportVersion){
+    _server->sendServiceChangedIndication();_prefs.putUInt("pointer-map",reportVersion);
+  }
   if(!_prefs.getBool("edge-gatt-v1",false)){
     _server->sendServiceChangedIndication();_prefs.putBool("edge-gatt-v1",true);
   }
@@ -96,7 +117,7 @@ void BleHid::begin(uint8_t slot) {
     _server->sendServiceChangedIndication();_prefs.putBool("text-menu-gatt",true);
   }
 
-  ControllerDiagnostics::reports(_input->getHandle(),_mouse->getHandle());
+  ControllerDiagnostics::reports(_input->getHandle(),_mouse->getHandle(),_relativeMouse?_relativeMouse->getHandle():0xffff);
   // Existing hosts cached the keyboard-only GATT table. Queue the standard
   // Service Changed indication for bonded peers before they reconnect.
   if (!_prefs.getBool("mouse-gatt", false)) {
@@ -104,7 +125,9 @@ void BleHid::begin(uint8_t slot) {
     _prefs.putBool("mouse-gatt", true);
   }
   auto adv = NimBLEDevice::getAdvertising();
-  adv->setAppearance(HID_KEYBOARD);
+  // Generic appearance avoids advertising a keyboard classification while
+  // acting as an input host. HID services still describe computer-facing input.
+  adv->setAppearance(0x0000);
   adv->addServiceUUID(_hid->getHidService()->getUUID());
   adv->addServiceUUID(EdgeProtocol::service);
   adv->enableScanResponse(true);
@@ -115,6 +138,8 @@ void BleHid::begin(uint8_t slot) {
 }
 
 void BleHid::enqueue(Kind kind, const NimBLEConnInfo &info, uint16_t sub, uint8_t reportId) {
+  // Incoming keyboard links belong to the BLE central, never a computer slot.
+  if(!info.isSlave())return;
   Event event{kind, info.getConnHandle(), *info.getIdAddress().getBase(),
               info.isEncrypted(), info.isBonded(), sub, reportId};
   if (xQueueSend(_events, &event, 0) != pdTRUE) {
@@ -143,13 +168,13 @@ void BleHid::handle(const Event &e) {
     _edges.reset(millis());
     _router.disconnect(e.handle);
     auto p = peer(e.handle);
-    if(p && p->slot==int(selected())){++_connectionRevision;_pendingMouse.clear();_pendingKeyboard.clear();}
+    if(p && p->slot==int(selected())){++_connectionRevision;_calibrationPending.clear();_pendingMouse.clear();_pendingKeyboard.clear();}
     if (p) { Serial.printf("[BLE] Disconnected slot %d\n", p->slot + 1); *p = {}; }
     return;
   }
   // Ignore stale queued events for connections that have already gone away.
   ble_gap_conn_desc live;
-  if (ble_gap_conn_find(e.handle, &live) != 0) return;
+  if (ble_gap_conn_find(e.handle, &live) != 0 || live.role != BLE_GAP_ROLE_SLAVE) return;
   for(const auto &stored:_config.slots)if(stored.assigned==2&&stored.type==live.peer_id_addr.type&&
     !memcmp(stored.address,live.peer_id_addr.val,6)){_server->disconnect(e.handle);return;}
   auto p = peer(e.handle);
@@ -236,14 +261,14 @@ void BleHid::loop() {
     if(!p.encrypted&&live.sec_state.encrypted&&live.sec_state.bonded){
       Event restored{Authenticated,p.handle,live.peer_id_addr,true,true,0,1};handle(restored);
     }
-    if(p.encrypted&&p.slot>=0&&!(p.subscribed&1)&&millis()-p.lastSubscriptionCheck>=250){
+    if(p.encrypted&&p.slot>=0&&(p.subscribed&PointerMode::subscriptions)!=PointerMode::subscriptions&&millis()-p.lastSubscriptionCheck>=250){
       p.lastSubscriptionCheck=millis();
-      for(uint8_t id=1;id<=2;++id){
+      for(uint8_t id=1;id<=(PointerMode::relativeReport?3:2);++id){
         // NimBLE registers the automatic CCCD immediately after a notify value.
         // Read this connection's actual CCCD; never invent a subscription.
         auto value=ble_hs_mbuf_att_pkt();if(!value)continue;
         uint8_t bytes[2]={},error=0;
-        const uint16_t descriptor=(id==1?_input:_mouse)->getHandle()+1;
+        const uint16_t descriptor=(id==1?_input:(id==2?_mouse:_relativeMouse))->getHandle()+1;
         const int rc=ble_att_svr_read_handle(p.handle,descriptor,0,value,&error);
         if(rc==0&&OS_MBUF_PKTLEN(value)==2&&os_mbuf_copydata(value,0,2,bytes)==0){
           const uint8_t bit=1u<<(id-1);if(bytes[0]&1)p.subscribed|=bit;else p.subscribed&=~bit;
@@ -279,7 +304,7 @@ void BleHid::loop() {
     Serial.println("[Recovery] Reconnecting selected Bluetooth host after stalled sends");
   }
   _router.service();
-  if(!isConnected()){_pendingMouse.clear();_pendingKeyboard.clear();}
+  if(!isConnected()){_calibrationPending.clear();_pendingMouse.clear();_pendingKeyboard.clear();}
   tuneInterval();
   if (millis() - _lastAdvertise >= 500) {
     _lastAdvertise = millis();
@@ -288,6 +313,7 @@ void BleHid::loop() {
 }
 
 void BleHid::flushInput(){
+  if(calibrationActive()){serviceCalibration();return;}
   for(unsigned i=0;i<4 && _pendingKeyboard.peek();++i){
     if(!_router.tryKeyboard(_pendingKeyboard.peek()))break;
     _pendingKeyboard.accepted();
@@ -297,14 +323,18 @@ void BleHid::flushInput(){
   const uint32_t intervalUs=mouseIntervalUs();
   const uint32_t now=micros();
   MouseReport mouse;
-  if(_pendingMouse.peek(mouse) && _mouseCadence.due(now,intervalUs)) {
-    const uint8_t bytes[7]={mouse.buttons,uint8_t(mouse.x),uint8_t(uint16_t(mouse.x)>>8),uint8_t(mouse.y),uint8_t(uint16_t(mouse.y)>>8),uint8_t(mouse.wheel),uint8_t(mouse.pan)};
-    if(_router.tryMouse(bytes)){
+  const bool relative=PointerMode::absolute&&!useAbsolutePointer();
+  auto &queue=relative?_calibrationPending:_pendingMouse;
+  if(queue.peek(mouse) && _mouseCadence.due(now,intervalUs)) {
+    const uint8_t bytes[7]={uint8_t(PointerMode::absolute&&!relative?(mouse.buttons&0x1f):mouse.buttons),uint8_t(mouse.x),uint8_t(uint16_t(mouse.x)>>8),uint8_t(mouse.y),uint8_t(uint16_t(mouse.y)>>8),uint8_t(mouse.wheel),uint8_t(mouse.pan)};
+    // Exactly one mouse path owns the entire gesture, including scrolling.
+    const bool sent=relative?_router.tryRelativeMouse(bytes):_router.tryMouse(bytes);
+    if(sent){
       const uint32_t submitted=micros();
       _mouseSubmissionSpacing.observe(submitted);
-      _mouseOldestWait.add(submitted-_pendingMouse.oldest());
-      _mouseNewestWait.add(submitted-_pendingMouse.newest());
-      _pendingMouse.accepted(mouse);_mouseCadence.accepted(submitted);
+      _mouseOldestWait.add(submitted-queue.oldest());
+      _mouseNewestWait.add(submitted-queue.newest());
+      queue.accepted(mouse);_mouseCadence.accepted(submitted);
     }
   }
 }
@@ -368,16 +398,19 @@ void BleHid::tuneInterval(){
 bool BleHid::notifyOne(void *context,uint16_t handle,const uint8_t *report,uint8_t id,size_t length) {
   auto self=static_cast<BleHid *>(context);auto p=self->peer(handle);
   ble_gap_conn_desc live;
-  if(id<1||id>2||!p||p->slot<0||!(p->subscribed&(1u<<(id-1)))||!p->encrypted||
+  if(id<1||id>3||(id==3&&!self->_relativeMouse)||!p||p->slot<0||!(p->subscribed&(1u<<(id-1)))||!p->encrypted||
      ble_gap_conn_find(handle,&live)!=0||!live.sec_state.encrypted||self->knownSlot(live.peer_id_addr)!=p->slot)return false;
   if(self->_retryAfterUs&&int32_t(micros()-self->_retryAfterUs)<0)return false;
   // Same directed NimBLE operation as Characteristic::notify, with aggregated
   // errors instead of synchronous per-packet logging under backpressure.
+  // The NanoKVM-format absolute mouse has a six-byte wire report; the router
+  // retains its seven-byte internal storage for position-preserving releases.
+  if(PointerMode::absolute&&id==2){if(length!=7)return false;length=6;}
   auto data=ble_hs_mbuf_from_flat(report,length);
-  const int rc=data?ble_gattc_notify_custom(handle,(id==1?self->_input:self->_mouse)->getHandle(),data):BLE_HS_ENOMEM;
+  const int rc=data?ble_gattc_notify_custom(handle,(id==1?self->_input:(id==2?self->_mouse:self->_relativeMouse))->getHandle(),data):BLE_HS_ENOMEM;
   const bool sent=rc==0;
   if(!sent)self->_retryAfterUs=micros()+8000;else self->_retryAfterUs=0;
-  if(sent){++self->_tx[id-1];self->_failedSince=0;}
+  if(sent){++self->_tx[id==1?0:1];self->_failedSince=0;}
   else {++self->_txFailed;++self->_totalTxFailed;if(!self->_failedSince)self->_failedSince=millis();}
   return sent;
 }
@@ -388,8 +421,10 @@ void BleHid::selectSlot(uint8_t slot) {
     if(!saveConfig(next)){Serial.println("[BLE] Selection could not be saved");return;}
     _config=next;
   }
-  if(slot!=selected()){_pendingMouse.clear();_pendingKeyboard.clear();}
+  if(slot!=selected()){_pendingMouse.clear();_calibrationPending.clear();_pendingKeyboard.clear();}
   _router.select(slot);
+  _absolutePointer.select(slot,millis());
+  _router.absoluteOutput(useAbsolutePointer()&&!calibrationActive());
   Serial.printf("[BLE] Selected computer %u (connections kept open)\n",slot+1);
   printStatus();
 }
@@ -400,6 +435,9 @@ void BleHid::sendKeyboardReport(const uint8_t *keys, uint8_t modifiers) {
   if(!_pendingKeyboard.push(report)){releaseAll();++_inputEpoch;Serial.println("[Input] Keyboard queue overflow; released input");}
 }
 void BleHid::printStatus() {
+  Serial.printf("[Pointer] mode=%s gain=%d/%d edge-distance=%u\n",PointerMode::absolute?"absolute-experimental":"relative",PointerMode::gainX,PointerMode::gainY,edgeThreshold());
+  if(PointerMode::absolute){const auto &t=_pointerTuning[selected()];Serial.printf("[Pointer tuning] slot=%u horizontal=%lu%% vertical=%lu%%\n",selected()+1,(unsigned long)t.horizontal,(unsigned long)t.vertical);}
+  Serial.printf("[Seamless] %s; output=%s; calibration=%u\n",_seamlessEnabled?"enabled":"disabled",useAbsolutePointer()?"absolute":"relative",calibrationStage());
   ControllerDiagnostics::printStatus();
   static uint32_t last=0;
   const uint32_t now=millis();
@@ -426,8 +464,9 @@ void BleHid::sendMouseReport(const MouseReport &r,uint32_t received) {
   ++_mouseIn;
   _mouseArrivalSpacing.observe(received);
   _mouseBridgeWait.add(micros()-received);
-  if(!isConnected()){_pendingMouse.clear();return;}
-  if(!_pendingMouse.push(r,received)) {
+  if(!isConnected()){_calibrationPending.clear();_pendingMouse.clear();return;}
+  auto &queue=PointerMode::absolute&&!useAbsolutePointer()?_calibrationPending:_pendingMouse;
+  if(!queue.push(r,received)) {
     releaseAll();
     Serial.println("[Mouse] Button transition queue overflow; released input");
   }
@@ -476,9 +515,11 @@ bool BleHid::shortcutCommand(JsonVariantConst command,JsonObject result,String &
   if(!strcmp(op,"shortcut-record")){
     if(!command["action"].is<unsigned>()||command["action"].as<unsigned>()>3){error="Choose Cycle, Next, Previous, or Slot";return false;}
     if(_shortcutRecorder.active()){error="Another recording is active; cancel it or wait 60 seconds";return false;}
+    const unsigned kind=command["kind"]|0u;
+    if(kind>2||(command["action"].as<unsigned>()==Slot&&kind==2)){error="Unsupported shortcut input type";return false;}
     char token[33];snprintf(token,sizeof(token),"%08lx%08lx%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random());_shortcutToken=token;
     releaseAll();
-    _shortcutRecorder.begin(command["action"],millis(),_shortcuts.generation);
+    _shortcutRecorder.begin(command["action"],millis(),_shortcuts.generation,kind);
     result["token"]=_shortcutToken;result["state"]="waiting";return true;
   }
   if(!strcmp(op,"shortcuts-reset")){
@@ -566,6 +607,7 @@ String BleHid::forgetComputer(unsigned slot){
 bool BleHid::saveConfig(const SlotConfig &config) { return _prefs.putBytes("config",&config,sizeof(config))==sizeof(config); }
 void BleHid::applyIdentities() {
   for(unsigned i=0;i<3;++i){_assigned[i]=_config.slots[i].assigned;_identities[i].type=_config.slots[i].type;memcpy(_identities[i].val,_config.slots[i].address,6);}
+  loadPointerTuning();
 }
 bool BleHid::configure(const uint8_t order[3],const char names[3][33],uint32_t generation) {
   if(generation!=_config.generation)return false;
@@ -573,7 +615,10 @@ bool BleHid::configure(const uint8_t order[3],const char names[3][33],uint32_t g
   for(const auto &p:_peers)if(p.handle!=MultiHostRouter::NONE&&p.slot<0)return false;
   SlotConfig next;if(!reorderedConfig(_config,order,names,next)||!saveConfig(next))return false;
   _pendingMouse.clear();_pendingKeyboard.clear();
+  _absolutePointer.reorder(order,millis());
   _router.reorder(order);_config=next;applyIdentities();
+  _absolutePointer.select(selected(),millis());
+  _router.absoluteOutput(useAbsolutePointer());
   for(auto &p:_peers)if(p.slot>=0)p.slot=knownSlot(p.identity);
   printStatus();return true;
 }
@@ -584,6 +629,11 @@ static void timingJson(JsonObject out,const TimingStats &stats){
   out["stddev_ms"]=stats.deviation()/1000.0;out["p95_upper_ms"]=stats.count?stats.p95Upper()/1000.0:0;
 }
 void BleHid::appendStatus(JsonObject out){
+  out["seamless_enabled"]=_seamlessEnabled;
+  out["calibration_stage"]=calibrationStage();
+  out["pointer_mode"]=PointerMode::absolute?"absolute-experimental":"relative";
+  if(PointerMode::absolute){out["pointer_gain_x"]=PointerMode::gainX;out["pointer_gain_y"]=PointerMode::gainY;}
+  if(PointerMode::absolute){auto profiles=out["pointer_tuning"].to<JsonArray>();for(const auto &t:_pointerTuning){auto item=profiles.add<JsonObject>();item["horizontal_percent"]=t.horizontal;item["vertical_percent"]=t.vertical;item["span_x"]=t.spanX;item["span_y"]=t.spanY;}}
   ControllerDiagnostics::appendStatus(out["controller"].to<JsonObject>());
   auto timing=out["mouse_timing"].to<JsonObject>();
   timing["scope"]="since_restart";timing["idle_cutoff_ms"]=100;
@@ -618,16 +668,36 @@ void BleHid::onWrite(NimBLECharacteristic *characteristic,NimBLEConnInfo &info){
   }
 }
 
-bool BleHid::edgeMouse(const MouseReport &report,uint32_t received,bool blocked){
+bool BleHid::edgeMouse(MouseReport &report,uint32_t received,bool blocked){
+  if(PointerMode::absolute){
+    if(!useAbsolutePointer())return false;
+    const auto &screen=_absolutePointer.layout.screens[selected()];
+    return _absolutePointer.motion(report,blocked,(micros()-received)/1000,millis(),edgeThreshold(),SharedPointerScale::gain(_sharedSpeed,screen.sensitivity),SharedPointerScale::gain(_sharedSpeed,screen.sensitivity),SharedPointerScale::denominator(screen.width),SharedPointerScale::denominator(screen.height));
+  }
   if(blocked){_edges.motion(0,1,millis(),millis());return false;}
   return _edges.motion(report.x,report.buttons,millis()-(micros()-received)/1000,millis());
 }
 
 void BleHid::serviceEdges(bool allowed){
   const uint32_t now=millis();uint8_t ready=0;
+  if(calibrationActive()||!_seamlessEnabled)allowed=false;
   for(const auto &p:_peers)if(p.slot>=0&&!p.forgetting&&p.encrypted&&
-      (p.subscribed&3)==3&&connected(unsigned(p.slot)))ready|=1u<<p.slot;
-  if(_edgeConfigGeneration!=_config.generation){_edges.reset(now);_edgeConfigGeneration=_config.generation;}
+      (p.subscribed&PointerMode::subscriptions)==PointerMode::subscriptions&&connected(unsigned(p.slot)))ready|=1u<<p.slot;
+  if(_edgeConfigGeneration!=_config.generation){_edges.reset(now);_absolutePointer.reset(now);_edgeConfigGeneration=_config.generation;}
+  if(PointerMode::absolute){
+    _absolutePointer.sync(selected(),ready,allowed,now);
+    const int destination=_absolutePointer.destination();
+    if(destination>=0){
+      selectSlot(uint8_t(destination));
+      if(selected()==unsigned(destination)){
+        const auto entry=_absolutePointer.enter(unsigned(destination),now);
+        sendMouseReport(entry,micros());
+      }else _absolutePointer.reset(now);
+      _edgeConfigGeneration=_config.generation;
+    }
+    // Disable companion routing while firmware owns the cursor.
+    allowed=false;
+  }
   _edges.sync(selected(),ready,allowed,now);
   const int destination=_edges.finish(now);
   if(destination>=0){
@@ -649,5 +719,224 @@ bool BleHid::setEdgeThreshold(unsigned value){
   if(!EdgeSettings::valid(value))return false;
   if(value==_edges.threshold())return true;
   if(_prefs.putUInt("edge-distance",value)!=sizeof(uint32_t))return false;
+  _absolutePointer.reset(millis());
   return _edges.setThreshold(value,millis());
+}
+
+// Key by bonded identity so tuning follows a computer when slots are reordered.
+bool BleHid::pointerKey(unsigned slot,char key[16])const{
+  if(slot>=3||_config.slots[slot].assigned!=1)return false;
+  const auto &s=_config.slots[slot];
+  snprintf(key,16,"p%02x%02x%02x%02x%02x%02x%02x",s.type,s.address[0],s.address[1],s.address[2],s.address[3],s.address[4],s.address[5]);
+  return true;
+}
+void BleHid::loadPointerTuning(){
+  for(unsigned slot=0;slot<3;++slot){
+    _pointerTuning[slot]={};char key[16];PointerTuning saved;
+    if(pointerKey(slot,key)&&_prefs.isKey(key)&&_prefs.getBytesLength(key)==sizeof(saved)&&
+      _prefs.getBytes(key,&saved,sizeof(saved))==sizeof(saved)&&saved.valid())_pointerTuning[slot]=saved;
+    // Preserve earlier manual tuning without altering the saved slot layout.
+    else if(pointerKey(slot,key)&&_prefs.isKey(key)&&_prefs.getBytesLength(key)==3*sizeof(uint32_t)){
+      uint32_t old[3];
+      if(_prefs.getBytes(key,old,sizeof(old))==sizeof(old)&&old[0]==1&&PointerTuning::validValue(0,old[1])&&PointerTuning::validValue(1,old[2])){
+        _pointerTuning[slot].horizontal=old[1];_pointerTuning[slot].vertical=old[2];
+      }
+    }
+  }
+}
+bool BleHid::setPointerValue(unsigned slot,unsigned field,unsigned value){
+  char key[16];
+  if(!PointerMode::absolute||!PointerTuning::validValue(field,value)||!pointerKey(slot,key))return false;
+  auto next=_pointerTuning[slot];next.set(field,value);
+  if(_prefs.putBytes(key,&next,sizeof(next))!=sizeof(next))return false;
+  _pointerTuning[slot]=next;
+  if(slot==selected())releaseAll();
+  return true;
+}
+
+uint8_t BleHid::calibrationReady()const{
+  uint8_t mask=0;
+  if(!PointerMode::relativeReport)return mask;
+  for(const auto &p:_peers)if(p.slot>=0&&!p.forgetting&&p.encrypted&&(p.subscribed&7)==7&&connected(p.slot))mask|=1u<<p.slot;
+  return mask;
+}
+bool BleHid::beginCalibration(uint8_t mask,bool enableAfter,bool textFeedback){
+  if(calibrationActive()||!mask||(mask&~calibrationReady()))return false;
+  const unsigned original=selected();const int first=PointerCalibration::first(mask);
+  releaseAll();selectSlot(unsigned(first));
+  if(selected()!=unsigned(first))return false;
+  _router.absoluteOutput(false);
+  _calibrationMenuReturn=false;_calibrationTextFeedback=textFeedback;_calibrationFailed=false;_calibrationComplete=false;
+  _enableAfterCalibration=enableAfter;_calibrationRequested=mask;_calibrationSaved=0;_calibrationEnableFailed=false;_calibrationFeedback.clear();
+  _calibrationPending.clear();_calibration.begin(mask,original,millis());
+  _calibrationSession=_connectionRevision;_calibrationLastSend=millis();_calibrationFeedbackAt=0;
+  ++_inputEpoch;
+  Serial.printf("[Calibration] Slot %u: top-left, click and release left button\n",selected()+1);
+  return true;
+}
+void BleHid::cancelCalibration(bool failed,bool complete){
+  if(!calibrationActive())return;
+  const unsigned original=_calibration.origin;
+  _calibrationFeedback.clear();_calibration.cancel();_enableAfterCalibration=false;_calibrationPending.clear();releaseAll();
+  selectSlot(original);_router.absoluteOutput(useAbsolutePointer());++_inputEpoch;
+  _calibrationMenuReturn=_calibrationTextFeedback&&complete&&selected()==original&&isConnected();
+  _calibrationMenuSession=_connectionRevision;
+  _calibrationFailed=failed;_calibrationComplete=complete;_calibrationFeedbackAt=millis();
+  Serial.println(failed?"[Calibration] Failed; current slot unchanged. Returning to original slot.":"[Calibration] Ended; returning to original slot.");
+}
+void BleHid::calibrationMouse(const MouseReport &report,uint32_t received){
+  if(!calibrationActive()||_calibrationFeedback.active())return;
+  if(micros()-received>100000){cancelCalibration(true);return;}
+  if(!_calibration.motion(report,millis()))return;
+  // Marking clicks, wheel events and all other mouse buttons stay local.
+  const MouseReport relative{0,report.x,report.y,0,0};
+  if(!_calibrationPending.push(relative,received))cancelCalibration(true);
+}
+bool BleHid::saveCalibration(){
+  if(!_calibration.valid())return false;
+  char key[16];if(!pointerKey(selected(),key))return false;
+  PointerTuning next;
+  next.spanX=uint32_t(_calibration.x);next.spanY=uint32_t(_calibration.y);
+  if(_prefs.putBytes(key,&next,sizeof(next))!=sizeof(next))return false;
+  _pointerTuning[selected()]=next;
+  _absolutePointer.positions[selected()]={32767,32767};
+  Serial.printf("[Calibration] Saved slot %u: span=%lu/%lu counts\n",selected()+1,(unsigned long)next.spanX,(unsigned long)next.spanY);
+  return true;
+}
+void BleHid::serviceCalibration(){
+  if(_calibrationFeedback.active()){serviceCalibrationFeedback();return;}
+  const uint32_t now=millis();
+  if(_calibration.expired(now)||selected()!=_calibration.slot||_connectionRevision!=_calibrationSession||!(calibrationReady()&(1u<<selected()))){cancelCalibration(true);return;}
+  MouseReport r;
+  if(_calibrationPending.peek(r)&&_mouseCadence.due(micros(),mouseIntervalUs())){
+    const uint8_t bytes[7]={0,uint8_t(r.x),uint8_t(uint16_t(r.x)>>8),uint8_t(r.y),uint8_t(uint16_t(r.y)>>8),0,0};
+    if(_router.tryRelativeMouse(bytes)){
+      _calibrationPending.accepted(r);_mouseCadence.accepted(micros());_calibrationLastSend=now;
+    }
+  }
+  const auto previous=_calibration.stage;
+  _calibration.settle(!_calibrationPending.peek(r)&&now-_calibrationLastSend>=PointerCalibration::settleTime,now);
+  if(previous!=_calibration.stage&&_calibration.stage==PointerCalibration::BottomRight)
+    Serial.println("[Calibration] Bottom-right: move smoothly, then click and release left button");
+  if(_calibration.stage!=PointerCalibration::Ready)return;
+  if(!saveCalibration()){cancelCalibration(true);return;}
+  _calibrationSaved|=1u<<_calibration.slot;
+  const int next=_calibration.next(calibrationReady());
+  String message="\nSlot "+String(_calibration.slot+1)+" calibration OK.\n";
+  if(next>=0){
+    message+="Next: slot "+String(next+1)+". Move to TOP LEFT, left-click and release; then BOTTOM RIGHT, left-click and release.\n";
+  }else{
+    const uint8_t skipped=_calibrationRequested&~_calibrationSaved;
+    // Optional calibration estimates one shared scale, rather than assigning
+    // different movement scales to each screen. Apply only after completion.
+    unsigned sum=0,count=0;
+    for(unsigned i=0;i<3;++i)if(_calibrationSaved&(1u<<i)){
+      const auto &screen=_absolutePointer.layout.screens[i];const auto &t=_pointerTuning[i];
+      sum+=SharedPointerScale::estimate(screen.width,screen.height,t.spanX,t.spanY,screen.sensitivity);++count;
+    }
+    const unsigned speed=count?(sum+count/2)/count:_sharedSpeed;
+    if(_prefs.putUInt("pointer-speed",speed)==sizeof(uint32_t)){_sharedSpeed=speed;message+="Shared sensitivity: "+String(speed)+"%.\n";}
+    else {_calibrationEnableFailed=true;message+="Could not save shared sensitivity. Previous speed retained.\n";}
+    message+="Calibration complete.";
+    if(skipped){message+=" Skipped disconnected slots:";for(unsigned slot=0;slot<3;++slot)if(skipped&(1u<<slot))message+=" "+String(slot+1);}
+    message+="\n";
+    if(_enableAfterCalibration){
+      // All requested captures have finished. Commit opt-in before reporting it.
+      if(_prefs.putBool("seamless",true)==1){_seamlessEnabled=true;message+="Seamless switching enabled.\n";}
+      else {_calibrationEnableFailed=true;message+="Calibration saved, but seamless switching could not be enabled. Retry Enable from setup.\n";}
+      _enableAfterCalibration=false;
+    }else message+=_seamlessEnabled?"Seamless switching remains enabled.\n":"Seamless switching is off. Enable it from setup when ready.\n";
+  }
+  if(!calibrationMessage(message,next))cancelCalibration(true);
+}
+bool BleHid::calibrationMessage(const String &message,int next){
+  if(!_calibrationTextFeedback){
+    Serial.printf("[Calibration] %s",message.c_str());
+    if(next<0){cancelCalibration(_calibrationEnableFailed,true);return true;}
+    if(!(calibrationReady()&(1u<<next)))return false;
+    releaseAll();selectSlot(unsigned(next));if(selected()!=unsigned(next))return false;
+    _calibration.start(unsigned(next),millis());_calibrationSession=_connectionRevision;
+    _calibrationPending.clear();_calibrationLastSend=millis();++_inputEpoch;return true;
+  }
+  _calibrationPending.clear();releaseAll();selectSlot(_calibration.origin);
+  if(selected()!=_calibration.origin||!connected(_calibration.origin))return false;
+  _calibrationNext=next;++_inputEpoch;
+  return _calibrationFeedback.begin(message.c_str(),selected(),_connectionRevision,millis());
+}
+void BleHid::serviceCalibrationFeedback(){
+  const auto result=_calibrationFeedback.tick(millis(),menuReportSpacing(),selected(),_connectionRevision,isConnected(),
+    [this](const uint8_t *report){return _router.tryKeyboard(report);});
+  if(result==CalibrationFeedback::Waiting)return;
+  if(result==CalibrationFeedback::LostHost){cancelCalibration(true);return;}
+  if(_calibrationNext<0){cancelCalibration(_calibrationEnableFailed,true);return;}
+  // Recheck after the message; never send calibration motion to a lost slot.
+  if(!(calibrationReady()&(1u<<_calibrationNext))){cancelCalibration(true);return;}
+  selectSlot(unsigned(_calibrationNext));
+  if(selected()!=unsigned(_calibrationNext)){cancelCalibration(true);return;}
+  _calibration.start(unsigned(_calibrationNext),millis());_calibrationSession=_connectionRevision;
+  _calibrationPending.clear();_calibrationLastSend=millis();++_inputEpoch;
+  Serial.printf("[Calibration] Slot %u: top-left, click and release left button\n",selected()+1);
+}
+
+uint32_t BleHid::calibrationColor(uint32_t now)const{
+  if(calibrationActive()){
+    if(_calibrationFeedback.active())return 0x001800;
+    const unsigned pulses=_calibration.stage==PointerCalibration::TopLeft?1:2;
+    return now%1200<pulses*300&&now%300<150?0x001414:0;
+  }
+  if(_calibrationFeedbackAt&&now-_calibrationFeedbackAt<2000)return _calibrationFailed?0x180000:(_calibrationComplete?0x001800:0x141000);
+  return 0xffffffff;
+}
+
+uint8_t BleHid::calibrationNeeded()const{
+  uint8_t mask=0;
+  if(PointerMode::absolute)for(unsigned slot=0;slot<3;++slot)
+    if(connected(slot)&&!_pointerTuning[slot].spanX)mask|=1u<<slot;
+  return mask;
+}
+bool BleHid::setSeamlessEnabled(bool enabled){
+  if(calibrationActive())return false;
+  if(_prefs.putBool("seamless",enabled)!=1)return false;
+  releaseAll();_seamlessEnabled=enabled;_router.absoluteOutput(useAbsolutePointer());
+  _edges.reset(millis());++_inputEpoch;return true;
+}
+
+void BleHid::appendLayout(JsonObject out)const{
+  const auto &layout=_absolutePointer.layout;
+  out["active"]=bool(layout.active);out["generation"]=layout.generation;
+  auto screens=out["screens"].to<JsonArray>();
+  for(unsigned i=0;i<3;++i){const auto &s=layout.screens[i];auto item=screens.add<JsonObject>();item["x"]=s.x;item["y"]=s.y;item["width"]=s.width;item["height"]=s.height;item["enabled"]=bool(s.enabled);item["estimated"]=bool(s.estimated);item["sensitivity"]=s.sensitivity;item["span_x"]=_pointerTuning[i].spanX;item["span_y"]=_pointerTuning[i].spanY;}
+}
+bool BleHid::setLayout(JsonVariantConst request,String &error){
+  auto next=_absolutePointer.layout;
+  if(!PointerMode::absolute){error="Monitor arrangement requires absolute-pointer firmware";return false;}
+  if(!request["generation"].is<uint32_t>()||request["generation"].as<uint32_t>()!=next.generation){error="Arrangement changed. Reload it before saving.";return false;}
+  if(!request["active"].is<bool>()){error="Choose an arrangement mode";return false;}
+  auto screens=request["screens"].as<JsonArrayConst>();
+  if(screens.size()!=3){error="Provide all three slot rectangles";return false;}
+  for(unsigned i=0;i<3;++i){auto v=screens[i];
+    if(!v["x"].is<int32_t>()||!v["y"].is<int32_t>()||!v["width"].is<uint32_t>()||!v["height"].is<uint32_t>()||!v["enabled"].is<bool>()||!v["estimated"].is<bool>()){error="Invalid monitor dimensions";return false;}
+    if(!v["sensitivity"].isNull()&&!v["sensitivity"].is<unsigned>()){error="Screen sensitivity must be 25–400%";return false;}
+    const unsigned sensitivity=v["sensitivity"]|next.screens[i].sensitivity;
+    if(sensitivity<25||sensitivity>400){error="Screen sensitivity must be 25–400%";return false;}
+    next.screens[i]={v["x"],v["y"],v["width"],v["height"],v["enabled"].as<bool>()?1u:0u,v["estimated"].as<bool>()?1u:0u,sensitivity};
+  }
+  next.active=request["active"].as<bool>();++next.generation;
+  if(!next.valid()){error="Monitors must not overlap. Dimensions: 64–16384 pixels; positions: -65536–65536.";return false;}
+  if(_prefs.putBytes("monitor-layout",&next,sizeof(next))!=sizeof(next)){error="Could not save arrangement";return false;}
+  _absolutePointer.layout=next;_absolutePointer.reset(millis());return true;
+}
+
+bool BleHid::setSharedSpeed(unsigned value){
+  if(!SharedPointerScale::valid(value)||calibrationActive())return false;
+  if(_prefs.putUInt("pointer-speed",value)!=sizeof(uint32_t))return false;
+  _sharedSpeed=value;releaseAll();return true;
+}
+void BleHid::appendPointerPosition(JsonObject out)const{
+  out["x"]=_absolutePointer.positions[selected()].x;out["y"]=_absolutePointer.positions[selected()].y;
+}
+bool BleHid::probePointer(int x,int y){
+  if(!useAbsolutePointer()||calibrationActive()||!isConnected()||x<0||x>32767||y<0||y>32767)return false;
+  releaseAll();_absolutePointer.positions[selected()]={int16_t(x),int16_t(y)};
+  sendMouseReport({0,int16_t(x),int16_t(y),0,0},micros());return true;
 }

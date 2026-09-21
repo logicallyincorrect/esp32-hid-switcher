@@ -16,6 +16,10 @@ class HidMouseParser {
     return int32_t(v);
   }
 public:
+  bool supports(uint8_t id)const{
+    for(const auto &l:layouts)if(l.used&&l.id==id&&(l.x.size||l.y.size||l.wheel.size||l.pan.size||l.buttons[0].size))return true;
+    return false;
+  }
   bool parse(const uint8_t *data, size_t length) {
     *this = {};
     struct Global { uint32_t page=0,size=0,count=0,id=0; int32_t min=0; } g,stack[4];

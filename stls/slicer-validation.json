@@ -1,0 +1,116 @@
+{
+  "tool": "BambuStudio 02.08.02.61",
+  "purpose": "PLA slicing smoke check; no physical print or strength validation",
+  "machine": "Bambu Lab X1 Carbon 0.4 nozzle",
+  "process": "0.20mm Standard @BBL X1C with 4 walls, 25% infill, 5 top/bottom layers, supports disabled",
+  "filament": "Generic PLA",
+  "stl_sha256": {
+    "base.stl": "417ca0d235ac5e6d69274fe525b46567620a21df58d520100b57c6f6f823d016",
+    "lid.stl": "d63ab0cd784c9b803d0c2a949be4addcaceaf6814c5152d28e87c169ee4411bd",
+    "snap-test-base.stl": "6a4038822ac4efd9e63b18aada3a0927f01f5f017512fb00a245241426e85571",
+    "snap-test-lid.stl": "2e9f70304aa53c913d157fbb12eb1f769302afd45b0156ef908259b506b0d894"
+  },
+  "result": {
+    "error_string": "Success.",
+    "export_time": 662,
+    "layer_height": 0.20000000298023224,
+    "plate_index": 0,
+    "prepare_time": 69,
+    "return_code": 0,
+    "sliced_plates": [
+      {
+        "feature_type_times": {
+          "Bottom surface": 388.0472106933594,
+          "Bridge": 175.37432861328125,
+          "Custom": 1.0284502506256104,
+          "Inner wall": 5443.65625,
+          "Internal solid infill": 2851.87255859375,
+          "Outer wall": 3263.756103515625,
+          "Overhang wall": 34.02150344848633,
+          "Skirt": 12.842016220092773,
+          "Sparse infill": 63.72793960571289,
+          "Top surface": 462.34295654296875,
+          "Travel": 760.9563598632812,
+          "Undefined": 760.741943359375
+        },
+        "filament_change_times": 0,
+        "filaments": [
+          {
+            "filament_id": "",
+            "id": 1,
+            "main_used_g": 0.0,
+            "total_used_g": 0.0
+          }
+        ],
+        "generate_support_material_time": 40,
+        "id": 1,
+        "infill_time": 100,
+        "layer_filament_change": 0,
+        "main_predication": 13456.716796875,
+        "make_perimeters_time": 353,
+        "obj_cached_cnt": 0,
+        "objects": [
+          {
+            "bbox": {
+              "depth": 64.94999694824219,
+              "height": 22.5,
+              "width": 38.000003814697266,
+              "x": 85.9999771118164,
+              "y": 100.99998474121094,
+              "z": 0.0
+            },
+            "id": 74,
+            "name": "base.stl",
+            "triangle_count": 6676
+          },
+          {
+            "bbox": {
+              "depth": 44.349998474121094,
+              "height": 22.5,
+              "width": 7.999999523162842,
+              "x": 76.00003051757812,
+              "y": 114.79872131347656,
+              "z": 0.0
+            },
+            "id": 96,
+            "name": "snap-test-base.stl",
+            "triangle_count": 2600
+          },
+          {
+            "bbox": {
+              "depth": 64.94999694824219,
+              "height": 12.149999618530273,
+              "width": 38.000003814697266,
+              "x": 85.9999771118164,
+              "y": 34.05002212524414,
+              "z": 0.0
+            },
+            "id": 85,
+            "name": "lid.stl",
+            "triangle_count": 9904
+          },
+          {
+            "bbox": {
+              "depth": 44.349998474121094,
+              "height": 6.900000095367432,
+              "width": 7.999999523162842,
+              "x": 76.00003051757812,
+              "y": 68.44873046875,
+              "z": 0.0
+            },
+            "id": 107,
+            "name": "snap-test-lid.stl",
+            "triangle_count": 784
+          }
+        ],
+        "sliced_time": 1505,
+        "sliced_time_with_cache": 951,
+        "total_predication": 13457.53125,
+        "triangle_count": 19964,
+        "warning_message": ""
+      }
+    ],
+    "sparse_infill_density": 25.0,
+    "wall_loops": 4
+  }
+}

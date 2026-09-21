@@ -1,8 +1,10 @@
+.DS_Store
 .pio/
 .vscode/
 .aider*
 
 .venv/
+__pycache__/
 artifacts/
 
 # pioarduino hybrid SDK build outputs
@@ -18,3 +20,8 @@ src/SetupPage.h
 tests/node_modules/
 
 companion/build/
+
+# Generated SDK configuration for the BLE input experiment
+sdkconfig.esp32s3_ble_input
+
+.venv-cli/

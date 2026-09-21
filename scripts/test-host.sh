@@ -8,4 +8,7 @@ for source in tests/*.cpp; do
   "$test_dir/test"
 done
 python3 tests/hid-device-lookup.py
+python3 tests/usb-root-disconnect.py
+python3 tests/hid-open-cleanup.py
+python3 tests/usb-recovery-dispatch.py
 echo "Host firmware tests passed"
