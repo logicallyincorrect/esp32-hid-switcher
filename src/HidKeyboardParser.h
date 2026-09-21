@@ -51,7 +51,8 @@ public:
       }
     }
     if(depth||cd)return false;
-    for(const auto &l:layouts)if(l.keyboard)return true;return false;
+    for(const auto &l:layouts)if(l.keyboard)return true;
+    return false;
   }
   bool decode(uint8_t id,const uint8_t *data,size_t length,uint8_t out[8])const{
     const Layout *l=nullptr;for(const auto &item:layouts)if(item.used&&item.id==id&&item.keyboard)l=&item;
