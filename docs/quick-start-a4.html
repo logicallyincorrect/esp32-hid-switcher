@@ -7,8 +7,8 @@
     @page { size: A4 landscape; margin: 0; }
     * { box-sizing: border-box; }
     html, body { margin: 0; color: #20342d; font: 8.7pt/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    .page { width: 297mm; height: 210mm; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); page-break-after: always; min-width: 0; }
-    .panel { min-width: 0; padding: 11mm 8mm 9mm; border-right: .25mm dashed #aab9ae; overflow-wrap: anywhere; }
+    .page { width: 297mm; height: 210mm; display: table; table-layout: fixed; page-break-after: always; }
+    .panel { display: table-cell; width: 25%; vertical-align: top; padding: 11mm 8mm 9mm; border-right: .25mm dashed #aab9ae; overflow-wrap: anywhere; }
     .panel:last-child { border-right: 0; }
     h1 { margin: 0 0 4mm; font-size: 20pt; line-height: 1.05; }
     h2 { margin: 0 0 3mm; font-size: 13.5pt; color: #356248; }
@@ -29,7 +29,7 @@
       <h1>HID Switcher</h1>
       <p class="badge">One keyboard and mouse · three computers</p>
       <h3>What you need</h3>
-      <ul><li>Freenove ESP32-S3 board and the supplied case</li><li>USB keyboard and mouse, plus a powered hub if needed</li><li>USB cable connected to the board's UART/programming port</li></ul>
+      <ul><li>OTG-enabled ESP32-S3 board (for example, Freenove) and a case</li><li>USB keyboard and mouse, plus a powered hub if needed</li><li>USB cable connected to the board's UART/programming port</li></ul>
       <div class="note"><b>Do not erase flash</b> during an update unless you intentionally want to remove pairings, names, shortcuts, and calibration.</div>
       <h3>Choose a setup path</h3>
       <p><b>Web UI:</b> use the USB UART/programming port and a Chrome-compatible browser. This works before an input keyboard is paired.</p>
@@ -50,6 +50,8 @@
       <h2>2 · Configure features</h2>
       <p><b>Web UI:</b> in <b>Switching</b>, click the pencil beside a keyboard or mouse cell. Press the shortcut, release it, and the cell saves automatically. The × clears it.</p>
       <p><b>On-board:</b> choose <b>Shortcuts</b>, select an action and input type, press the desired keys or mouse button, release them, then confirm.</p>
+      <h3>Default shortcuts</h3>
+      <ul><li><b>Cycle:</b> Ctrl + Cmd / Windows + Tab</li><li><b>Select slot:</b> Ctrl + Cmd / Windows + 1, 2, or 3</li><li><b>Next / Previous:</b> unassigned by default</li></ul>
       <ul><li><b>Cycle</b> moves to the next connected computer.</li><li><b>Next / Previous</b> move one connected slot.</li><li><b>Slot</b> selects a numbered slot.</li></ul>
       <h3>Seamless edge switching</h3>
       <p>Turn it on only after the output layout is ready. Drag the monitor tiles to match the physical desk. Click the pencil beside each resolution and speed to edit values inline; click the checkmark to save.</p>
@@ -80,12 +82,14 @@
     <div class="panel">
       <h2>BLE pairing problems</h2>
       <ul><li>Keep the BLE device awake and advertising.</li><li>Forget old bonds on both sides before retrying.</li><li>For a numeric comparison prompt, confirm the same code on both devices.</li><li>If the scan is empty, use <b>Scan all BLE devices</b>; non-connectable advertisers still cannot pair.</li></ul>
-      <p class="small">The BLE input experiment uses one saved wireless input and is separate from the three computer output connections.</p>
     </div>
     <div class="panel">
       <h2>Seamless switching problems</h2>
-      <p>Set the actual pixel dimensions in the monitor tiles. Recalibrate after changing display scaling, mouse DPI, or host pointer settings. Move steadily between corners.</p>
-      <p>If a display is offline, it is deliberately skipped. Reconnect it and refresh the page to restore it to the saved arrangement.</p>
+      <h3>Why is movement uneven?</h3>
+      <p>Set each monitor's actual pixel dimensions in its tile. Recalibrate after changing display scaling, mouse DPI, or host pointer settings, and move steadily between corners.</p>
+      <h3>What happens when a display is offline?</h3>
+      <p>That slot is skipped. Reconnect it and refresh the page; its saved position and dimensions return.</p>
+      <h3>Why did edge switching stop?</h3>
       <p>Dragging, held keys, and the setup menu temporarily block edge switching.</p>
     </div>
     <div class="panel">
