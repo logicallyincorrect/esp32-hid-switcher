@@ -23,7 +23,7 @@ jobs:
       - run: python3 tests/package-web.py
       - run: pio pkg install -e esp32s3_ble_input
       - name: Pin the pioarduino build environment
-        run: uv pip install --python ~/.platformio/penv/bin/python "pioarduino==6.1.19"
+        run: ~/.platformio/penv/bin/uv pip install --python ~/.platformio/penv/bin/python "pioarduino==6.1.19"
       - run: pio run -e esp32s3_ble_input
       - name: Restore previous firmware catalog
         env:
