@@ -9,6 +9,9 @@
     html, body { margin: 0; color: #20342d; font: 8.7pt/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     .page { width: 297mm; height: 210mm; display: table; table-layout: fixed; page-break-after: always; }
     .panel { display: table-cell; width: 25%; vertical-align: top; padding: 11mm 8mm 9mm; border-right: .25mm dashed #aab9ae; overflow-wrap: anywhere; }
+    /* Duplex short-edge fold: the reverse side is physically mirrored. */
+    .page.back { direction: rtl; }
+    .page.back .panel { direction: ltr; }
     .panel:last-child { border-right: 0; }
     h1 { margin: 0 0 4mm; font-size: 20pt; line-height: 1.05; }
     h2 { margin: 0 0 3mm; font-size: 13.5pt; color: #356248; }
@@ -71,7 +74,7 @@
       <p><b>github.com/logicallyincorrect/esp32-hid-switcher</b></p>
     </div>
   </section>
-  <section class="page">
+  <section class="page back">
     <div class="panel">
       <h2>Troubleshooting</h2>
       <h3>No board in Connect board</h3>
