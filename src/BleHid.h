@@ -102,6 +102,7 @@ private:
     uint8_t reportId;
     EdgeProtocol::Sample edge = {};
     uint32_t received = 0;
+    int reason = 0;
   };
   struct Peer {
     uint16_t handle = MultiHostRouter::NONE;
@@ -176,7 +177,7 @@ private:
   NimBLECharacteristic *_edgeSample=nullptr,*_edgeStatus=nullptr;
   void onWrite(NimBLECharacteristic *,NimBLEConnInfo &) override;
   uint32_t _lastAdvertise = 0;
-  void enqueue(Kind kind, const NimBLEConnInfo &info, uint16_t sub = 0, uint8_t reportId=1);
+  void enqueue(Kind kind, const NimBLEConnInfo &info, uint16_t sub = 0, uint8_t reportId=1, int reason=0);
   void handle(const Event &event);
   Peer *peer(uint16_t handle);
   int knownSlot(const ble_addr_t &identity);
@@ -184,7 +185,7 @@ private:
   static bool notifyOne(void *context, uint16_t handle, const uint8_t *report, uint8_t id, size_t length);
   void onConnParamsUpdate(NimBLEConnInfo &info) override {enqueue(TimingUpdated,info);}
   void onConnect(NimBLEServer *, NimBLEConnInfo &info) override { enqueue(Connected, info); }
-  void onDisconnect(NimBLEServer *, NimBLEConnInfo &info, int) override { enqueue(Disconnected, info); }
+  void onDisconnect(NimBLEServer *, NimBLEConnInfo &info, int reason) override { enqueue(Disconnected, info, 0, 1, reason); }
 #if HID_BLE_INPUT
   uint32_t onPassKeyDisplay()override{const uint32_t key=esp_random()%1000000;Serial.printf("[BLE computer pairing] Enter %06lu on the computer.\n",(unsigned long)key);return key;}
 #endif

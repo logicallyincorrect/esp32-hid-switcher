@@ -4,6 +4,7 @@
 #include "ForgetPairing.h"
 #include <nimble/nimble/host/include/host/ble_store.h>
 #include "ControllerDiagnostics.h"
+#include "DeviceShortcut.h"
 #include <nimble/nimble/host/include/host/ble_gatt.h>
 #include <nimble/nimble/host/include/host/ble_l2cap.h>
 #include <nimble/nimble/host/include/host/ble_hs_mbuf.h>
@@ -137,11 +138,12 @@ void BleHid::begin(uint8_t slot) {
   printStatus();
 }
 
-void BleHid::enqueue(Kind kind, const NimBLEConnInfo &info, uint16_t sub, uint8_t reportId) {
+void BleHid::enqueue(Kind kind, const NimBLEConnInfo &info, uint16_t sub, uint8_t reportId, int reason) {
   // Incoming keyboard links belong to the BLE central, never a computer slot.
   if(!info.isSlave())return;
   Event event{kind, info.getConnHandle(), *info.getIdAddress().getBase(),
               info.isEncrypted(), info.isBonded(), sub, reportId};
+  event.reason = reason;
   if (xQueueSend(_events, &event, 0) != pdTRUE) {
     portENTER_CRITICAL(&_eventMux); _eventOverflow = true; portEXIT_CRITICAL(&_eventMux);
   }
@@ -169,7 +171,16 @@ void BleHid::handle(const Event &e) {
     _router.disconnect(e.handle);
     auto p = peer(e.handle);
     if(p && p->slot==int(selected())){++_connectionRevision;_calibrationPending.clear();_pendingMouse.clear();_pendingKeyboard.clear();}
-    if (p) { Serial.printf("[BLE] Disconnected slot %d\n", p->slot + 1); *p = {}; }
+    const bool selectedLeft=p&&p->slot==int(selected())&&e.reason!=BLE_HS_HCI_ERR(BLE_ERR_CONN_TERM_LOCAL);
+    if (p) { Serial.printf("[BLE] Disconnected slot %d reason=0x%x\n", p->slot + 1, e.reason); *p = {}; }
+    // The selected computer went away (power off, out of range): hand input to
+    // the next online one. Switcher-initiated recovery keeps the selection.
+    if(selectedLeft){
+      uint8_t online=0;
+      for(unsigned slot=0;slot<3;++slot)if(connected(slot))online|=1u<<slot;
+      const unsigned next=nextConnectedSlot(selected(),online);
+      if(next!=selected()){Serial.printf("[BLE] Selected computer left; falling back to %u\n",next+1);selectSlot(uint8_t(next));}
+    }
     return;
   }
   // Ignore stale queued events for connections that have already gone away.
