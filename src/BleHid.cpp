@@ -361,7 +361,7 @@ void BleHid::tuneInterval(){
   bool settled=true;
   for(const auto &p:_peers)if(p.handle!=MultiHostRouter::NONE){
     ble_gap_conn_desc live;
-    if(!p.encrypted||p.subscribed!=3||ble_gap_conn_find(p.handle,&live)!=0||!live.sec_state.encrypted)settled=false;
+    if(!p.encrypted||(p.subscribed&PointerMode::subscriptions)!=PointerMode::subscriptions||ble_gap_conn_find(p.handle,&live)!=0||!live.sec_state.encrypted)settled=false;
   }
   if(!settled){_linksSettledSince=0;return;}
   if(!_linksSettledSince){_linksSettledSince=now;return;}
