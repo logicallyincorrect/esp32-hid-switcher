@@ -68,7 +68,7 @@ Slot/action/field indices in JSON are **zero based**; scan-result numbers are **
 
 | Operation | Arguments / behavior |
 | --- | --- |
-| `status` | Capabilities, name, slots, settings generation, selected slot, shortcuts, calibration progress/result |
+| `status` | Capabilities, name, slots, settings generation, selected slot, shortcuts, calibration progress/result; in absolute builds `presets` |
 | `input-status` | Availability, busy state, last status/passkey, numbered devices, revision |
 | `input` | `command`: `scan`, `connect N`, `reconnect`, `disconnect`, `forget`, or `status`; acknowledgement means queued |
 | `input-cancel` | Cancel pending input scan/connection |
@@ -78,6 +78,9 @@ Slot/action/field indices in JSON are **zero based**; scan-result numbers are **
 | `slots` | `generation` from status, `order`: permutation of [0,1,2], `names`: three names in new order, each up to 32 bytes |
 | `edge` | `value`: existing validated edge-distance setting |
 | `monitor-layout` | `generation` from status `monitor_layout`, `active` boolean, three `screens` with integer `x`, `y`, `width`, `height` and boolean `enabled`, `estimated`; saves absolute-mode monitor geometry |
+| `preset-save` | Absolute builds. `index` 0–3, `name` (1–24 printable characters, unique), three `screens` as in `monitor-layout` (`sensitivity` optional), `generation` from `status.presets`; creates the preset when the index is unused, otherwise replaces its name and screens |
+| `preset-activate` | Absolute builds. `index` of a saved preset; no `generation`. May change the selected slot |
+| `preset-delete` | Absolute builds. `index`, `generation`; also clears that preset's shortcuts. The last preset cannot be deleted |
 | `pointer-speed` | `value`: shared sensitivity percentage, 1–1600 (100 = one configured desktop pixel per count) |
 | `pointer-probe` | Diagnostic only: `x`, `y` normalized 0–32767; sends a button-free absolute position on the selected connected computer, requiring seamless mode and released input |
 | `pointer` | Legacy stored per-slot percentages (`slot`, `field`, `value`); retained for older firmware, not used by shared-speed motion. Use `pointer-speed` for current motion. |
@@ -85,9 +88,9 @@ Slot/action/field indices in JSON are **zero based**; scan-result numbers are **
 | `calibration-start` | `mask`: slot bitmask 1–7, `enable`: enable seamless after successful capture; serial feedback only |
 | `calibration-cancel` | Cancel and return to the original slot |
 | `shortcuts` | Read bindings |
-| `shortcut-record` | `action`: 0 cycle / 1 next / 2 previous / 3 slot; optional `kind`: 1 keyboard / 2 mouse (omitted accepts either); returns session `token` |
+| `shortcut-record` | `action`: 0 cycle / 1 next / 2 previous / 3 slot / 4 next preset / 5–8 preset 1–4 (4–8 absolute builds only; the preset must be saved); optional `kind`: 1 keyboard / 2 mouse (omitted accepts either); returns session `token` |
 | `shortcut-status`, `shortcut-save`, `shortcut-cancel` | `token` from recording; poll until ready, then save explicitly |
-| `shortcut-clear` | `action`, `kind`: 1 keyboard / 2 mouse |
+| `shortcut-clear` | `action` (0–8), `kind`: 1 keyboard / 2 mouse |
 | `shortcuts-reset` | Restore defaults |
 
 Recording suppresses forwarding while waiting and capturing. On release, capture ends and forwarding resumes. In the web shortcut table, the pencil records that cell’s input type and saves automatically on release; × removes an existing binding or cancels active recording. Keyboard chords finish after all keys and modifiers are released. The BOOT menu and CLI retain their explicit save flow. A dropped browser session does not erase settings; pending recordings/calibration retain their existing expiration timers. Explicit page Disconnect cancels its pending work. A bare USB unplug is not a configuration command.
@@ -103,6 +106,16 @@ Host parser/menu tests: `sh scripts/test-host.sh`. Browser transport tests: `nod
 - **Connect / Firmware** connects over USB and reports the installed application version/build. Use the Install firmware button to open a modal and choose any retained package, including an older build. Selection changes the ESP Web Tools manifest; installation remains explicit.
 - **Input Devices** lists USB inputs grouped by physical USB address and VID/PID, plus the connected or saved BLE input. USB labels use reported HID capabilities rather than invented product names. **Add BLE device** opens a modal for scanning, selection, pairing and results. Closing it or pressing Escape cancels pending BLE setup, but keeps a completed connection.
 - **Outputs** retains the computer-slot controls. Switching and shortcuts remain below.
+
+## Layout presets on the page
+
+`status.presets` (absolute builds only) holds `generation`, `active`, `arrangement` and `list`: the used presets as `{index, name, screens}` with three screens each. `status.monitor_layout` still reports the active preset. Preset rows in `status.shortcuts.bindings` (actions 4–8) exist for unused presets too and are empty; filter them by `presets.list`. When `status.presets` is absent (older firmware or a relative build) the page uses the single-arrangement protocol above and shows no preset controls.
+
+- One tab per preset above the arrangement, with the active one marked. Viewing a tab does not activate it. **New preset** copies the saved preset being viewed (up to four), **Rename**, **Delete** (hidden for the last preset; asks to confirm) and **Activate** (hidden on the active tab). These actions, and switching tabs, are disabled while there are unsaved changes: save or discard first.
+- Save writes only the viewed preset (`preset-save`). If the arrangement is off and the viewed preset is the active one, the button reads **Use this arrangement** and sends `monitor-layout` with `active` true, since `preset-save` does not change that flag.
+- Each on-screen screen has a **Mark slot N not on screen** button; at least one screen must stay on screen. Screens that are paired or connected but not on screen leave the canvas and appear in a **Not on screen** tray, with **Show on screen** to place them back (right of the rightmost screen if their old rectangle is taken).
+- The shortcut table gains **Next preset** and one row per used preset, labelled by name, with the usual record and clear controls.
+- If a preset shortcut or the BOOT menu changes the active preset while edits are unsaved, the next save fails with "Presets changed. Reload them before saving."; use Discard.
 
 The packager retains versioned binaries and `firmware/versions.json` in its output directory. Older entries are real retained images, not Git tags without binaries. Repackaging the same version/image does not add duplicates. The Pages workflow restores its previous `web-setup-history` artifact before packaging and uploads the accumulated catalog with 90-day artifact retention. If no prior artifact remains, a fresh deployment contains only the new package; preserve a copy of the site for longer-term archival. No public deployment is implied by a local package.
 
