@@ -136,12 +136,23 @@ void Application::drainInput() {
 }
 
 bool Application::shortcut(bool mouse) {
-  const int action = _ble.shortcutAction(_input.keys, _input.modifiers,
-      _input.mouseBlocked ? 0 : _input.buttons, mouse ? 2 : 0);
-  if (action < 0) return false;
+  const uint8_t buttons = _input.mouseBlocked ? 0 : _input.buttons, kind = mouse ? 2 : 0;
+  const int action = _ble.shortcutAction(_input.keys, _input.modifiers, buttons, kind);
+  if (action < 0) {
+    // Preset results (4..8) overlap direct-slot results (3..5); never mix the two.
+    const int preset = _ble.presetShortcutAction(_input.keys, _input.modifiers, buttons, kind);
+    if (preset < 0) return false;
+    const int index = preset == NextPreset ? nextPreset(_ble.presets()) : preset - Preset1;
+    if (index >= 0) _ble.activatePreset(unsigned(index));
+    _slot = _ble.selected();
+    _input.mouseBlocked = _input.buttons != 0;
+    return true;
+  }
   uint8_t connected = 0;
   for (unsigned slot = 0; slot < Board::slots; ++slot) if (_ble.connected(slot)) connected |= 1u << slot;
-  select(shortcutDestination(action, _ble.selected(), connected));
+  // Cycle/Next/Previous skip computers that are not on screen; Slot + 1/2/3 reaches any.
+  const uint8_t reachable = action < Slot ? connected & _ble.onScreenMask() : connected;
+  select(shortcutDestination(action, _ble.selected(), reachable));
   return true;
 }
 

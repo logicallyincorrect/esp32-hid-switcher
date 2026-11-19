@@ -23,6 +23,7 @@ void Application::serialRequest(const char *line){
       result["calibration_active"]=_ble.calibrationActive();result["calibration_stage"]=_ble.calibrationStage();result["calibration_result"]=_ble.calibrationResult();
       auto slots=result["slots"].to<JsonArray>();for(unsigned i=0;i<3;++i){auto slot=slots.add<JsonObject>();slot["name"]=_ble.config().slots[i].name;slot["paired"]=_ble.config().slots[i].assigned;slot["connected"]=_ble.connected(i);}
       _ble.appendLayout(result["monitor_layout"].to<JsonObject>());
+      if(_ble.absoluteMode())_ble.appendPresets(result["presets"].to<JsonObject>());
       _ble.appendShortcuts(result["shortcuts"].to<JsonObject>());ok=true;
     }else if(op=="input-status"){
       result["available"]=_backend.bleInputAvailable();result["busy"]=_backend.bleInputBusy();result["status"]=_backend.bleInputStatus();result["devices"]=_backend.bleInputDevices();result["count"]=_backend.bleInputCount();result["revision"]=_backend.bleInputRevision();ok=true;
@@ -56,6 +57,13 @@ void Application::serialRequest(const char *line){
       if(request["value"].is<unsigned>())ok=_ble.setEdgeThreshold(request["value"]);
     }else if(op=="monitor-layout"){
       ok=_ble.setLayout(request.as<JsonVariantConst>(),error);
+    }else if(op=="preset-save"||op=="preset-activate"||op=="preset-delete"){
+      if(!_ble.absoluteMode())error="Presets require absolute-pointer firmware";
+      else if(op=="preset-save")ok=_ble.savePresetCommand(request.as<JsonVariantConst>(),error);
+      else if(op=="preset-delete")ok=_ble.deletePresetCommand(request.as<JsonVariantConst>(),error);
+      else if(!request["index"].is<unsigned>())error="Choose a saved preset";
+      else {error=_ble.activatePreset(request["index"]);ok=error.isEmpty();}
+      if(ok)_ble.appendPresets(result);
     }else if(op=="pointer-speed"){
       if(request["value"].is<unsigned>())ok=_ble.setSharedSpeed(request["value"]);
     }else if(op=="pointer-probe"){

@@ -24,6 +24,7 @@
 #include "SharedPointerScale.h"
 #include "PointerCalibration.h"
 #include "CalibrationFeedback.h"
+#include "LayoutPresets.h"
 
 class BleHid : public NimBLEServerCallbacks, public NimBLECharacteristicCallbacks {
 public:
@@ -63,6 +64,14 @@ public:
 
   void appendLayout(JsonObject out)const;
   bool setLayout(JsonVariantConst request,String &error);
+  const LayoutPresets &presets()const{return _presets;}
+  // Slots on screen in the active preset; every slot outside absolute builds.
+  uint8_t onScreenMask()const{return PointerMode::absolute?_presets.onScreen():7;}
+  void appendPresets(JsonObject out)const;
+  // Empty on success, else a user-facing error.
+  String activatePreset(unsigned index);
+  bool savePresetCommand(JsonVariantConst request,String &error);
+  bool deletePresetCommand(JsonVariantConst request,String &error);
 
   const String &deviceName() const { return _deviceName; }
   bool setDeviceName(const String &name);
@@ -71,6 +80,8 @@ public:
   bool captureKeyboard(const uint8_t *keys,uint8_t modifiers){return _shortcutRecorder.keyboard(keys,modifiers);}
   bool captureMouse(uint8_t buttons){return _shortcutRecorder.mouse(buttons);}
   int shortcutAction(const uint8_t *keys,uint8_t modifiers,uint8_t buttons,uint8_t kind=0)const{return matchingShortcut(_shortcuts,keys,modifiers,buttons,kind);}
+  // NextPreset or Preset1+i, or -1. Separate from shortcutAction: the values overlap.
+  int presetShortcutAction(const uint8_t *keys,uint8_t modifiers,uint8_t buttons,uint8_t kind=0)const;
   void selectSlot(uint8_t slot);
   String forgetComputer(unsigned slot);
   uint32_t menuSession()const{return _connectionRevision;}
@@ -159,6 +170,10 @@ private:
   SlotConfig _config;
   String _deviceName;
   ShortcutConfig _shortcuts;
+  PresetShortcutConfig _presetShortcuts;
+  LayoutPresets _presets;
+  bool savePresets(const LayoutPresets &next);
+  bool parseScreens(JsonVariantConst screens,const MonitorLayout::Screen fallback[3],MonitorLayout::Screen out[3],String &error)const;
   ShortcutRecorder _shortcutRecorder;
   String _shortcutToken;
   bool saveConfig(const SlotConfig &config);
