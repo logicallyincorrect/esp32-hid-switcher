@@ -100,15 +100,24 @@ inline LayoutPresets migratePresets(const MonitorLayout &old,uint8_t paired){
   LayoutPresets result;
   auto &p=result.presets[0];
   p.used=1;strcpy(p.name,"Default");
-  for(unsigned i=0;i<3;++i){p.screens[i]=old.screens[i];if(!(paired&(1u<<i)))p.screens[i].enabled=0;}
+  for(unsigned i=0;i<3;++i){p.screens[i]=old.screens[i];if(paired&&!(paired&(1u<<i)))p.screens[i].enabled=0;}
   for(unsigned i=0;i<3;++i)if(paired&(1u<<i))placeOnScreen(p.screens,i);
+  // Nothing paired (fresh device): keep the stored flags, but never migrate to
+  // an empty preset.
+  if(!p.screens[0].enabled&&!p.screens[1].enabled&&!p.screens[2].enabled)placeOnScreen(p.screens,0);
   result.activeIndex=0;result.arrangement=old.active;result.generation=old.generation;
   return result;
 }
 
+// A preset's only on-screen slot stays on: an unpaired slot is never ready, so
+// this is harmless and keeps every preset valid.
 inline void hideSlot(LayoutPresets &presets,unsigned slot){
   if(slot>=3)return;
-  for(auto &p:presets.presets)p.screens[slot].enabled=0;
+  for(auto &p:presets.presets){
+    bool other=false;
+    for(unsigned i=0;i<3;++i)if(i!=slot&&p.screens[i].enabled)other=true;
+    if(other)p.screens[slot].enabled=0;
+  }
 }
 
 inline void permutePresets(LayoutPresets &presets,const uint8_t order[3]){
