@@ -1,5 +1,5 @@
 import { SerialClient } from './serial.mjs';
-import { MonitorArrangement } from './monitor-layout.mjs';
+import { MonitorArrangement } from './monitor-layout.mjs?v=layout-presets-1';
 const $ = id => document.getElementById(id);
 let editingAction = 0, editingKind = 0, recordingBusy = false, recordingPoll = false, bindingSignature = '';
 let connected = false, snapshot, slotSignature = '', token = '', polling = false, deviceSignature = '', inputSnapshot = null, firmwareCatalog = [], installing = false, pendingSlotNames = null;
@@ -86,7 +86,7 @@ function renderSlots(status) {
     row.append(handle,heading,label,actions); $('slots').append(row);
   });
 }
-const arrangement = new MonitorArrangement($('monitor-arrangement'), args => command('monitor-layout', args));
+const arrangement = new MonitorArrangement($('monitor-arrangement'), command);
 async function refresh() {
   snapshot = await client.request('status');
   if (snapshot.protocol !== 1) throw new Error('Unsupported firmware protocol');
@@ -141,16 +141,19 @@ async function refresh() {
   $('calibration').textContent = snapshot.calibration_active
     ? `Slot ${snapshot.selected + 1}: ${snapshot.calibration_stage === 1 ? 'Move to TOP LEFT; left-click and release.' : snapshot.calibration_stage === 2 ? 'Move to BOTTOM RIGHT; left-click and release.' : 'Saving calibration…'}`
     : `Calibration: ${snapshot.calibration_result}`;
-  const actionNames = ['Cycle computers','Next computer','Previous computer','Select slot'];
+  // Preset rows (actions 4 = Next preset, 5 + index = that preset) exist only on preset firmware.
+  const presets = snapshot.presets ? [...snapshot.presets.list].sort((a, b) => a.index - b.index) : [];
+  const actions = [[0,'Cycle computers'],[1,'Next computer'],[2,'Previous computer'],[3,'Select slot']].map(([action,name]) => ({ action, name, label: name.toLowerCase() }));
+  if (snapshot.presets) actions.push({ action: 4, name: 'Next preset', label: 'next preset' }, ...presets.map(p => ({ action: 5 + p.index, name: p.name, label: `preset ${p.name}`, preset: true })));
   const keyName = key => key >= 4 && key <= 29 ? String.fromCharCode(65 + key - 4)
     : key >= 30 && key <= 39 ? String((key - 29) % 10)
     : ({40:'Enter',41:'Escape',43:'Tab',44:'Space'}[key] || `Key ${key}`);
-  const signature = JSON.stringify([snapshot.shortcuts.bindings, editingAction, editingKind, token, recordingBusy]);
+  const signature = JSON.stringify([snapshot.shortcuts.bindings, actions, editingAction, editingKind, token, recordingBusy]);
   if (signature !== bindingSignature) {
     bindingSignature = signature; $('bindings').replaceChildren();
-    actionNames.forEach((name, action) => {
+    actions.forEach(({ action, name, label: actionLabel, preset }) => {
       const row = document.createElement('tr'); const title = document.createElement('th'); title.scope = 'row';
-      title.textContent = name; row.append(title);
+      title.textContent = name; if (preset) title.title = `Activate preset ${name}`; row.append(title);
       for (const kind of [1,2]) {
         const cell = document.createElement('td');
         const binding = snapshot.shortcuts.bindings.find(b => b[0] === action && b[1] === kind);
@@ -164,8 +167,8 @@ async function refresh() {
           const active = editingKind === kind && editingAction === action && (token || recordingBusy);
           const label = document.createElement('span'); label.textContent = active ? 'Listening… release to save' : value;
           const controls = document.createElement('div'); controls.className = 'binding-actions';
-          const edit = button('✎', () => recordShortcut(action,kind)); edit.className = 'icon-action'; edit.setAttribute('aria-label', `Edit ${name.toLowerCase()} ${kind===1?'keyboard':'mouse'}`); edit.title = edit.getAttribute('aria-label'); edit.hidden = !!active; edit.disabled = !!token || recordingBusy;
-          const remove = button('×', () => active ? cancelShortcut() : command('shortcut-clear', { action,kind })); remove.className = 'icon-action'; remove.setAttribute('aria-label', `${active ? 'Cancel recording' : 'Remove '+name.toLowerCase()+' '+(kind===1?'keyboard':'mouse')}`); remove.title = remove.getAttribute('aria-label'); remove.hidden = !active && !parts.length; remove.disabled = recordingBusy || (!!token && !active);
+          const edit = button('✎', () => recordShortcut(action,kind)); edit.className = 'icon-action'; edit.setAttribute('aria-label', `Edit ${actionLabel} ${kind===1?'keyboard':'mouse'}`); edit.title = edit.getAttribute('aria-label'); edit.hidden = !!active; edit.disabled = !!token || recordingBusy;
+          const remove = button('×', () => active ? cancelShortcut() : command('shortcut-clear', { action,kind })); remove.className = 'icon-action'; remove.setAttribute('aria-label', `${active ? 'Cancel recording' : 'Remove '+actionLabel+' '+(kind===1?'keyboard':'mouse')}`); remove.title = remove.getAttribute('aria-label'); remove.hidden = !active && !parts.length; remove.disabled = recordingBusy || (!!token && !active);
           const icon = (path) => {
             const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
             svg.setAttribute('viewBox','0 0 24 24'); svg.setAttribute('aria-hidden','true');
