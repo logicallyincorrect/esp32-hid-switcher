@@ -46,6 +46,11 @@ int main(){
    assert(m.valid()&&m.presets[0].screens[0].enabled&&!m.presets[0].screens[1].enabled&&!m.presets[0].screens[2].enabled);
    // Default-layout fallback used by BleHid::begin is valid.
    assert(migratePresets(MonitorLayout{},0b001).valid());}
+  // Activation: with the arrangement flag on, the hidden selection moves to its
+  // replacement; with it off, presets have no effect and the selection stays.
+  {LayoutPresets a;a.arrangement=1;a.presets[0]=work;strcpy(a.presets[0].name,"Work Mac");a.presets[1]=home;strcpy(a.presets[1].name,"Home PC");
+   assert(a.valid()&&activationSlot(a,1,1,0b111)==2&&activationSlot(a,1,0,0b111)==0);
+   a.arrangement=0;assert(activationSlot(a,1,1,0b111)==1);}
   // Storage round trip.
   LayoutPresets q;assert(q.load(&p,sizeof(p))&&q.activeIndex==p.activeIndex);
   assert(!q.load(&p,sizeof(p)-1));

@@ -1098,7 +1098,7 @@ String BleHid::activatePreset(unsigned index){
   if(index!=_presets.activeIndex){
     uint8_t connectedMask=0;
     for(unsigned i=0;i<3;++i)if(connected(i))connectedMask|=1u<<i;
-    const int slot=replacementSlot(_presets.presets[_presets.activeIndex],_presets.presets[index],selected(),connectedMask);
+    const int slot=activationSlot(_presets,index,selected(),connectedMask);
     // The generation bump makes an open page reload before editing the new layout.
     LayoutPresets next=_presets;next.activeIndex=index;++next.generation;
     if(!savePresets(next))return "Could not save presets";

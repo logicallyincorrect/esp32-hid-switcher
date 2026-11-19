@@ -169,3 +169,10 @@ inline int replacementSlot(const LayoutPreset &from,const LayoutPreset &to,unsig
   }
   return best<0?int(selected):best;
 }
+
+// Selection after activating preset `to`. With the arrangement flag off,
+// presets have no effect and every connected computer counts as on screen.
+inline int activationSlot(const LayoutPresets &presets,unsigned to,unsigned selected,uint8_t connected){
+  if(!presets.arrangement||to>=LayoutPresets::Count||presets.activeIndex>=LayoutPresets::Count)return int(selected);
+  return replacementSlot(presets.presets[presets.activeIndex],presets.presets[to],selected,connected);
+}
