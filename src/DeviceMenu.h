@@ -8,7 +8,7 @@
 template<class Backend> class DeviceMenu {
   enum Page { Main,Computers,RenameSlot,RenameText,RenameConfirm,MoveFrom,MoveTo,MoveConfirm,
               SelectSlot,SelectDrain,ForgetSlot,ForgetConfirm,ForgetDrain,Actions,Binding,RecordArming,Recording,RecordConfirm,
-              ClearConfirm,ResetConfirm,NameText,NameConfirm,EdgeText,EdgeConfirm,PointerSlot,PointerField,PointerText,PointerConfirm,CalibrationSlots,CalibrationConfirm,CalibrationDrain,Seamless,BleInputs,BleDevices,BleWait,BleForget };
+              ClearConfirm,ResetConfirm,NameText,NameConfirm,EdgeText,EdgeConfirm,PointerSlot,PointerField,PointerText,PointerConfirm,CalibrationSlots,CalibrationConfirm,CalibrationDrain,Seamless,BleInputs,BleDevices,BleWait,BleForget,Presets };
   Backend &_backend;
   TextConsole _output;
   MenuButton _button;
@@ -24,7 +24,9 @@ template<class Backend> class DeviceMenu {
   std::string _name;
   void print(const std::string &text){if(!_output.append(text))close();}
   void prompt(const std::string &text){_textReady=false;print("\n"+text+(_page==Main?"":"\nESC Back")+"\n> ");}
-  void main(){_page=Main;prompt(std::string("1 Computers\n2 Shortcuts\n3 Bluetooth name\n4 Diagnostics\n5 Edge switching")+"\n6 Seamless switching"+std::string(_backend.absoluteMode()?"\n7 Pointer tuning":"")+std::string(_backend.bleInputAvailable()?"\n8 BLE input devices":"")+"\nESC Exit");}
+  void main(){_page=Main;prompt(std::string("1 Computers\n2 Shortcuts\n3 Bluetooth name\n4 Diagnostics\n5 Edge switching")+"\n6 Seamless switching"+std::string(_backend.absoluteMode()?"\n7 Pointer tuning":"")+std::string(_backend.bleInputAvailable()?"\n8 BLE input devices":"")+std::string(_backend.absoluteMode()?"\n9 Layout presets":"")+"\nESC Exit");}
+  void presets(){_page=Presets;prompt("Layout presets\n"+_backend.presetList()+"Choose a number to activate.");}
+  unsigned presetCount(){const auto list=_backend.presetList();unsigned n=0;for(char c:list)if(c=='\n')++n;return n;}
   void bleInputs(){_page=BleInputs;prompt("BLE input devices\n"+_backend.bleInputStatus()+"\n1 Scan for keyboards\n2 Reconnect saved device\n3 Disconnect input\n4 Forget input pairing\n5 Scan all BLE devices");}
   void bleDevices(){
     _page=BleDevices;const auto devices=_backend.bleInputDevices();std::string list;
@@ -66,7 +68,7 @@ template<class Backend> class DeviceMenu {
     case Main:close();break;
     case BleInputs:main();break;
     case BleDevices:case BleWait:case BleForget:bleInputs();break;
-    case Computers:case Actions:case NameText:case NameConfirm:case EdgeText:case EdgeConfirm:case PointerSlot:case Seamless:main();break;
+    case Computers:case Presets:case Actions:case NameText:case NameConfirm:case EdgeText:case EdgeConfirm:case PointerSlot:case Seamless:main();break;
     case CalibrationSlots:seamless();break;
     case CalibrationConfirm:case CalibrationDrain:calibrationSlots();break;
     case PointerField:_page=PointerSlot;prompt("Tune which paired computer?\n"+_backend.computers());break;
@@ -110,7 +112,13 @@ template<class Backend> class DeviceMenu {
       else if(c=='5'){_name.clear();_page=EdgeText;prompt("Current edge distance: "+std::to_string(_backend.edgeThreshold())+" counts\nNew distance (1-10000). Higher needs more mouse movement.\nEnter to review.");}
       else if(c=='6')seamless();
       else if(c=='7'&&_backend.absoluteMode())pointerFields();
-      else if(c=='8'&&_backend.bleInputAvailable())bleInputs();break;
+      else if(c=='8'&&_backend.bleInputAvailable())bleInputs();
+      else if(c=='9'&&_backend.absoluteMode())presets();break;
+    case Presets:
+      if(c>='1'&&c<='9'&&number(c)<presetCount()){
+        const std::string error=_backend.activatePreset(number(c));
+        if(error.empty())main();else{prompt(error);presets();}
+      }break;
     case BleInputs:
       if(c=='1')bleRequest("scan",true);
       else if(c=='2')bleRequest("reconnect");
