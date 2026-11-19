@@ -16,6 +16,9 @@ constexpr bool absolute = HID_ABSOLUTE_POINTER != 0;
 constexpr bool absoluteOnly = HID_ABSOLUTE_ONLY_TEST != 0;
 constexpr bool relativeReport = absolute && !absoluteOnly;
 constexpr unsigned subscriptions = relativeReport ? 7 : 3;
+// Keyboard and primary pointer report: all a selected computer needs. The
+// calibration-only relative report is optional; Windows does not subscribe.
+constexpr unsigned outputSubscriptions = 3;
 static_assert(!absoluteOnly || absolute,"Absolute-only test requires absolute mode");
 constexpr int gainX = HID_ABSOLUTE_GAIN_X, gainY = HID_ABSOLUTE_GAIN_Y;
 static_assert(gainX > 0 && gainX <= 256 && gainY > 0 && gainY <= 256,"Absolute gains must be 1..256");
