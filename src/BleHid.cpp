@@ -81,7 +81,7 @@ void BleHid::begin(uint8_t slot) {
     ShortcutConfig saved;
     if(_prefs.getBytes("shortcuts",&saved,sizeof(saved))==sizeof(saved)&&validShortcuts(saved))_shortcuts=saved;
   }
-  if(_prefs.getBytesLength("preset-shortcuts")==sizeof(_presetShortcuts)){
+  if(PointerMode::absolute&&_prefs.isKey("preset-shortcuts")&&_prefs.getBytesLength("preset-shortcuts")==sizeof(_presetShortcuts)){
     PresetShortcutConfig saved;
     if(_prefs.getBytes("preset-shortcuts",&saved,sizeof(saved))==sizeof(saved)&&validShortcutSet(_shortcuts,saved))_presetShortcuts=saved;
   }
@@ -1080,16 +1080,17 @@ bool BleHid::deletePresetCommand(JsonVariantConst request,String &error){
   LayoutPresets next=_presets;
   if(!deletePreset(next,index)){error="Choose a saved preset; the last preset cannot be deleted";return false;}
   ++next.generation;
-  // Clear the deleted preset's shortcuts so a new preset in its place starts empty.
+  // Save the presets first; leftover bindings for an unused preset never match.
+  if(!savePresets(next)){error="Could not save presets";return false;}
+  // Then clear the deleted preset's shortcuts so a new preset in its place starts empty.
   PresetShortcutConfig shortcuts=_presetShortcuts;bool cleared=false;
   for(unsigned kind=1;kind<=2;++kind){auto &b=shortcuts.bindings[presetBindingIndex(Preset1+index,kind)];
     if(!emptyShortcut(b)){b={};b.kind=kind;cleared=true;}}
   if(cleared){
     ++shortcuts.generation;
-    if(_prefs.putBytes("preset-shortcuts",&shortcuts,sizeof(shortcuts))!=sizeof(shortcuts)){error="Could not clear the preset's shortcuts";return false;}
+    if(_prefs.putBytes("preset-shortcuts",&shortcuts,sizeof(shortcuts))!=sizeof(shortcuts)){error="Preset deleted, but its shortcuts could not be cleared";return false;}
     _presetShortcuts=shortcuts;
   }
-  if(!savePresets(next)){error="Could not save presets";return false;}
   return true;
 }
 String BleHid::activatePreset(unsigned index){

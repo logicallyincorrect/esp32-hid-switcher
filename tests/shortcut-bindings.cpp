@@ -32,6 +32,14 @@ int main(){
     assert(shortcutDestination(Previous,current,mask)==previous);
     for(int slot=0;slot<3;++slot)assert(shortcutDestination(3+slot,current,mask)==unsigned(slot));
   }
+  // Hidden (not on screen) computer 1 is connected: Cycle/Next/Previous skip it, Slot + 2 reaches it.
+  {const uint8_t connected=7,onScreen=0b101;
+   assert(shortcutReachable(Cycle,connected,onScreen)==0b101&&shortcutReachable(Next,connected,onScreen)==0b101&&shortcutReachable(Previous,connected,onScreen)==0b101);
+   assert(shortcutReachable(Slot+1,connected,onScreen)==7&&shortcutReachable(Slot,0b010,0b101)==0b010&&shortcutReachable(Cycle,0b010,0b101)==0);
+   assert(shortcutDestination(Cycle,0,shortcutReachable(Cycle,connected,onScreen))==2);
+   assert(shortcutDestination(Next,2,shortcutReachable(Next,connected,onScreen))==0);
+   assert(shortcutDestination(Previous,2,shortcutReachable(Previous,connected,onScreen))==0);
+   assert(shortcutDestination(Slot+1,0,shortcutReachable(Slot+1,connected,onScreen))==1);}
   ShortcutRecorder r;r.begin(Cycle,0,0);
   assert(r.keyboard(empty,0x81));assert(r.state==ShortcutRecorder::Armed);
   assert(r.keyboard(tab,0x81));assert(r.state==ShortcutRecorder::Capturing);

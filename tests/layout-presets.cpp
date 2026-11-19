@@ -38,10 +38,9 @@ int main(){
   {LayoutPresets h=p;h.presets[2]=h.presets[0];strcpy(h.presets[2].name,"Solo");
    for(auto &s:h.presets[2].screens)s.enabled=0;h.presets[2].screens[1].enabled=1;assert(h.valid());
    hideSlot(h,1);assert(h.valid()&&h.presets[2].screens[1].enabled&&!h.presets[0].screens[1].enabled);}
-  // Fresh device (nothing paired): keep the stored enabled flags...
-  {MonitorLayout fresh;auto m=migratePresets(fresh,0);assert(m.valid()&&m.onScreen()==7&&m.arrangement==0);
-   fresh.screens[1].enabled=0;fresh.active=1;m=migratePresets(fresh,0);assert(m.valid()&&m.onScreen()==0b101);
-   // ...and with none enabled, slot 0 goes on screen.
+  // Fresh device (nothing paired): only slot 0 is on screen, whatever was stored.
+  {MonitorLayout fresh;auto m=migratePresets(fresh,0);assert(m.valid()&&m.arrangement==0&&m.presets[0].screens[0].enabled&&!m.presets[0].screens[1].enabled&&!m.presets[0].screens[2].enabled);
+   fresh.screens[1].enabled=0;fresh.active=1;m=migratePresets(fresh,0);assert(m.valid()&&m.onScreen()==0b001&&m.arrangement==1);
    for(auto &s:fresh.screens)s.enabled=0;fresh.active=0;m=migratePresets(fresh,0);
    assert(m.valid()&&m.presets[0].screens[0].enabled&&!m.presets[0].screens[1].enabled&&!m.presets[0].screens[2].enabled);
    // Default-layout fallback used by BleHid::begin is valid.

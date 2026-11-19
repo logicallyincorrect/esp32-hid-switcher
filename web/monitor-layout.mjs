@@ -74,7 +74,7 @@ export class MonitorArrangement {
       this.changed();
     });
     this.stage.addEventListener('pointerdown',e=>{
-      const button=e.target.closest('[data-slot]');if(!button||this.busy||this.resolutionEditing!==undefined||this.speedEditing!==undefined||e.target.closest('button,input,form'))return;
+      const button=e.target.closest('[data-slot]');if(!button||this.busy||this.renaming||this.resolutionEditing!==undefined||this.speedEditing!==undefined||e.target.closest('button,input,form'))return;
       this.selected=Number(button.dataset.slot);this.edit();button.focus();
       this.drag={id:e.pointerId,x:e.clientX,y:e.clientY,screen:clone(this.draft.screens[this.selected]),frame:this.frame};
       this.stage.setPointerCapture(e.pointerId);
@@ -89,9 +89,9 @@ export class MonitorArrangement {
     });
     const end=e=>{if(!this.drag||this.drag.id!==e.pointerId)return;this.drag=null;this.draw();this.controls();};
     this.stage.addEventListener('pointerup',end);this.stage.addEventListener('pointercancel',end);
-    this.stage.addEventListener('click',e=>{if(this.resolutionEditing!==undefined||this.speedEditing!==undefined)return;if(e.target.closest('button,input,form'))return;const b=e.target.closest('[data-slot]');if(b){this.selected=Number(b.dataset.slot);this.edit();this.draw();}});
+    this.stage.addEventListener('click',e=>{if(this.resolutionEditing!==undefined||this.speedEditing!==undefined)return;if(e.target.closest('button,input,form'))return;const b=e.target.closest('[data-slot]');if(b){this.selected=Number(b.dataset.slot);this.edit();this.draw();this.controls();}});
     this.stage.addEventListener('keydown',e=>{
-      const b=e.target.closest('[data-slot]');if(!b||this.busy||this.resolutionEditing!==undefined||this.speedEditing!==undefined||e.target.closest('button,input,form'))return;
+      const b=e.target.closest('[data-slot]');if(!b||this.busy||this.renaming||this.resolutionEditing!==undefined||this.speedEditing!==undefined||e.target.closest('button,input,form'))return;
       const moves={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};if(!moves[e.key])return;
       e.preventDefault();this.selected=Number(b.dataset.slot);const s=this.draft.screens[this.selected],step=e.shiftKey?1:10;
       s.x+=moves[e.key][0]*step;s.y+=moves[e.key][1]*step;this.changed();this.stage.querySelector(`[data-slot="${this.selected}"]`).focus();
@@ -112,7 +112,7 @@ export class MonitorArrangement {
     this.renameForm.onsubmit=e=>{e.preventDefault();this.rename(this.renameForm.elements.preset.value.trim());};
     root.querySelector('[data-preset-delete]').onclick=()=>this.deletePreset();
     root.querySelector('[data-preset-activate]').onclick=()=>this.act(()=>this.run('preset-activate',{index:this.viewing}));
-    new ResizeObserver(()=>{if(this.draft&&!this.drag)this.draw();}).observe(this.stage);
+    new ResizeObserver(()=>{if(this.draft&&!this.drag){this.draw();this.controls();}}).observe(this.stage);
   }
   get editing(){return this.resolutionEditing!==undefined||this.speedEditing!==undefined;}
   viewedPreset(){return this.presets?.list.find(p=>p.index===this.viewing);}
@@ -129,9 +129,16 @@ export class MonitorArrangement {
     this.status=status;this.slots=status.slots;
     this.names=status.slots.map(s=>s.name);this.connected=status.slots.map(s=>s.connected);
     const presets=status.presets?clone(status.presets):null;
+    const baseGeneration=this.presets?.generation,baseViewed=this.dirty&&this.presets?clone(this.viewedPreset()):null;
     if(!!presets!==!!this.presets){this.dirty=false;this.renaming=false;this.viewing=undefined;}
     this.presets=presets;
     if(presets&&!presets.list.some(p=>p.index===this.viewing)){this.viewing=presets.active;this.dirty=false;this.renaming=false;}
+    // A preset activation bumps the generation without touching the viewed preset:
+    // keep an unsaved draft saveable when its stored base is unchanged.
+    if(this.dirty&&baseViewed&&this.draft&&presets.generation!==baseGeneration){
+      const now=presets.list.find(p=>p.index===baseViewed.index);
+      if(now&&now.name===baseViewed.name&&JSON.stringify(now.screens)===JSON.stringify(baseViewed.screens))this.draft.generation=presets.generation;
+    }
     this.stored=this.storedLayout();
     if(!this.dirty&&!this.busy&&!this.drag&&!this.editing)this.reseed();
     this.renderPresets();this.controls();
@@ -195,7 +202,10 @@ export class MonitorArrangement {
   deletePreset(){
     const preset=this.viewedPreset();
     if(!confirm(`Delete preset “${preset.name}”? Its shortcuts are removed too.`))return;
-    return this.act(()=>this.run('preset-delete',{index:preset.index,generation:this.presets.generation}));
+    return this.act(()=>this.run('preset-delete',{index:preset.index,generation:this.presets.generation})).then(ok=>{
+      if(ok)this.tabs.querySelector(`[data-preset="${this.presets.active}"]`)?.focus();
+      return ok;
+    });
   }
   hideScreen(i){
     if(i<0||this.busy)return;
@@ -213,7 +223,7 @@ export class MonitorArrangement {
   draw(frame){
     if(!this.draft)return;
     const screens=this.draft.screens,presetMode=!!this.presets;
-    const safe=screens.map((s,i)=>{const paired=!!(this.slots?.[i]?.paired||this.slots?.[i]?.connected);const available=presetMode?!!s.enabled:!!(paired||!this.stored?.active);return {...s,paired,enabled:available,x:Number.isFinite(s.x)?s.x:0,y:Number.isFinite(s.y)?s.y:0,width:Number.isFinite(s.width)?Math.max(64,s.width):1920,height:Number.isFinite(s.height)?Math.max(64,s.height):1080};});
+    const safe=screens.map((s,i)=>{const paired=!!(this.slots?.[i]?.paired||this.slots?.[i]?.connected);const available=presetMode?!!s.enabled&&paired:!!(paired||!this.stored?.active);return {...s,paired,enabled:available,x:Number.isFinite(s.x)?s.x:0,y:Number.isFinite(s.y)?s.y:0,width:Number.isFinite(s.width)?Math.max(64,s.width):1920,height:Number.isFinite(s.height)?Math.max(64,s.height):1080};});
     const visible=safe.filter(s=>s.enabled);const bounds=visible.length?visible:safe;
     const minX=Math.min(...bounds.map(s=>s.x)),minY=Math.min(...bounds.map(s=>s.y));
     const width=Math.max(...bounds.map(s=>s.x+s.width))-minX,height=Math.max(...bounds.map(s=>s.y+s.height))-minY;
@@ -311,10 +321,13 @@ export class MonitorArrangement {
     save.textContent=useArrangement?'Use this arrangement':this.presets?'Save preset':'Save arrangement';
     save.disabled=!valid||this.busy;
     this.root.querySelector('[data-discard]').hidden=!changed;
-    for(const b of this.root.querySelectorAll('[data-row],[data-discard],.monitor-excluded button,.monitor-stage input'))b.disabled=this.busy||((this.resolutionEditing!==undefined&&!b.closest('.monitor-resolution-edit'))||(this.speedEditing!==undefined&&!b.closest('.monitor-speed-line')));
-    this.editor.elements.enabled.disabled=this.busy||editing;
-    const onScreen=this.draft.screens.filter(s=>s.enabled).length;
-    for(const b of this.root.querySelectorAll('.monitor-hide,[data-selected-hide]')){b.disabled=this.busy||editing||onScreen<=1;b.title=onScreen<=1?'Keep at least one screen on screen':'Not on screen';}
+    for(const b of this.root.querySelectorAll('[data-row],[data-discard],.monitor-excluded button,.monitor-stage input'))b.disabled=this.busy||this.renaming||((this.resolutionEditing!==undefined&&!b.closest('.monitor-resolution-edit'))||(this.speedEditing!==undefined&&!b.closest('.monitor-speed-line')));
+    // Unsaved screen edits would be lost when the rename saves, so the stage is read-only meanwhile.
+    for(const b of this.root.querySelectorAll('.monitor-stage .monitor-pencil'))b.disabled=this.renaming||this.busy;
+    this.editor.elements.enabled.disabled=this.busy||editing||this.renaming;
+    // Unpaired slots are never drawn in preset mode, so they do not count.
+    const onScreen=this.draft.screens.filter((s,i)=>s.enabled&&(!this.presets||this.slots?.[i]?.paired||this.slots?.[i]?.connected)).length;
+    for(const b of this.root.querySelectorAll('.monitor-hide,[data-selected-hide]')){b.disabled=this.busy||editing||this.renaming||onScreen<=1;b.title=onScreen<=1?'Keep at least one screen on screen':'Not on screen';}
     if(this.presets){
       // Preset actions work on saved presets only, so a draft is never lost.
       const locked=this.busy||editing||changed||this.renaming,hint=changed?'Save or discard changes first':'';

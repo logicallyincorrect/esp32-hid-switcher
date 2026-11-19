@@ -190,7 +190,7 @@ template<class Backend> class DeviceMenu {
       if(c>='1'&&c<='3'){_destination=number(c);_page=SelectDrain;prompt("Menu closed. Selecting slot "+std::to_string(_destination+1)+".");}break;
     case Actions:
       if(c>='1'&&c<='4'){_action=number(c);binding();}
-      else if(c=='5'){_page=ResetConfirm;prompt("Restore all default shortcuts?\ny Yes\nn No");}
+      else if(c=='5'){_page=ResetConfirm;prompt("Restore all default shortcuts?\nPreset shortcuts are cleared.\ny Yes\nn No");}
       break;
     case Binding:
       if(c=='1'){_page=RecordArming;prompt(_action==3?"Release all keys. Then hold and release only the modifier keys.":"Release all keys/buttons. Then press and release the keyboard or mouse shortcut.");}

@@ -117,6 +117,11 @@ inline int matchingPresetShortcut(const PresetShortcutConfig &config,const uint8
   }
   return -1;
 }
+// Cycle/Next/Previous only reach connected computers that are on screen; the
+// direct Slot + N actions reach any connected computer.
+inline uint8_t shortcutReachable(int action,uint8_t connectedMask,uint8_t onScreenMask){
+  return action>=3?connectedMask:uint8_t(connectedMask&onScreenMask);
+}
 inline unsigned shortcutDestination(int action,unsigned current,uint8_t connectedMask){
   if(action>=3&&action<=5)return unsigned(action-3);
   if(action==Cycle||action==Next||action==Previous){

@@ -86,7 +86,7 @@ A computer that is not on screen in the active preset is never an edge-switching
 
 Activating a preset does not touch your keyboard and mouse while the selected computer is still on screen. If it is hidden by the new preset, input moves to the connected on-screen computer that took its place (the one whose rectangle overlaps the old one most, otherwise the lowest slot). If the custom arrangement is off, activating a preset only changes which preset is active.
 
-Create, rename, delete, arrange and activate presets on the [setup page](docs/usb-setup.md). Record shortcuts there or in the BOOT menu: one keyboard and one mouse shortcut for **Next preset** (steps through the presets and wraps) and for each of **Preset 1–4**. There are no defaults. The BOOT menu has **9 Layout presets**, which lists the presets and activates the one you choose; it cannot edit them. The active preset is kept after a restart.
+Create, rename, delete, arrange and activate presets on the [setup page](docs/usb-setup.md). Record shortcuts on the setup page (the BOOT menu cannot record them): one keyboard and one mouse shortcut for **Next preset** (steps through the presets and wraps) and for each of **Preset 1–4**. There are no defaults. The BOOT menu has **9 Layout presets**, which lists the presets and activates the one you choose; it cannot edit them. The active preset is kept after a restart.
 
 Updating from earlier firmware creates one preset named "Default" from your current arrangement. Your shortcuts and pairings are kept. See [technical details](docs/absolute-pointer.md#layout-presets).
 

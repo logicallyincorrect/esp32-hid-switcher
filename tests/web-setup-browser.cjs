@@ -233,17 +233,36 @@ const assert=require('node:assert/strict');
  await layout.getByRole('button',{name:'Save name',exact:true}).click();
  await page.waitForFunction(()=>window.requests.some(r=>r.op==='preset-save'&&r.index===1&&r.name==='Home PC'));
  await page.waitForFunction(()=>document.getElementById('bindings').textContent.includes('Home PC'));
+ // Rename blocks stage edits so unsaved screen edits cannot be dropped.
+ await layout.getByRole('button',{name:'Rename preset Home PC',exact:true}).click();
+ await layout.locator('[data-slot="0"]').focus();await page.keyboard.press('ArrowRight');
+ assert.equal(await layout.locator('[data-save]').isHidden(),true);
+ assert.equal(await layout.getByRole('button',{name:'Mark slot 1 not on screen',exact:true}).isDisabled(),true);
+ await layout.getByRole('button',{name:'Cancel',exact:true}).click();
+ // A preset activation elsewhere keeps an unsaved draft of an unchanged preset saveable.
+ await bar.getByRole('button',{name:'Default',exact:true}).click();
+ await layout.locator('[data-slot="0"]').focus();await page.keyboard.press('ArrowDown');
+ assert.equal(await layout.locator('[data-save]').isVisible(),true);
+ await page.evaluate(()=>{const p=window.setupState.presets;p.active=0;++p.generation;const a=p.list.find(e=>e.index===0);window.setupState.monitor_layout={active:p.arrangement,generation:p.generation,screens:a.screens.map((s,i)=>({...s,...window.setupState.monitor_layout.screens[i]}))};});
+ await bar.getByRole('button',{name:'Default, active',exact:true}).waitFor();
+ assert.equal(await layout.locator('[data-save]').isVisible(),true);
+ const priorSaves=await page.evaluate(()=>window.requests.filter(r=>r.op==='preset-save').length);
+ await layout.locator('[data-save]').click();
+ await page.waitForFunction(n=>window.requests.filter(r=>r.op==='preset-save').length>n,priorSaves);
+ await page.waitForFunction(()=>document.querySelector('#monitor-arrangement [data-save]').hidden);
+ assert.equal((await layout.locator('[data-status]').textContent()).includes('Reload'),false);
  for(const width of [320,390]){
    await page.setViewportSize({width,height:900});
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`preset overflow at ${width}`);
    await layout.screenshot({path:`artifacts/monitor-presets-${width}.png`});
  }
  await page.setViewportSize({width:1280,height:900});
- await bar.getByRole('button',{name:'Default',exact:true}).click();
+ await bar.getByRole('button',{name:'Default, active',exact:true}).click();
  page.once('dialog',dialog=>dialog.accept());
  await layout.getByRole('button',{name:'Delete preset Default',exact:true}).click();
  await page.waitForFunction(()=>window.requests.some(r=>r.op==='preset-delete'&&r.index===0));
  await page.waitForFunction(()=>document.querySelectorAll('#monitor-arrangement .preset-tab').length===1);
+ assert.equal(await page.evaluate(()=>document.activeElement?.dataset?.preset),'1');
  assert.equal(await layout.locator('[data-preset-delete]').isVisible(),false);
  await page.waitForFunction(()=>!document.getElementById('bindings').textContent.includes('Default'));
  // Older firmware without presets keeps the single editor and monitor-layout.

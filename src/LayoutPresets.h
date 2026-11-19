@@ -102,9 +102,8 @@ inline LayoutPresets migratePresets(const MonitorLayout &old,uint8_t paired){
   p.used=1;strcpy(p.name,"Default");
   for(unsigned i=0;i<3;++i){p.screens[i]=old.screens[i];if(paired&&!(paired&(1u<<i)))p.screens[i].enabled=0;}
   for(unsigned i=0;i<3;++i)if(paired&(1u<<i))placeOnScreen(p.screens,i);
-  // Nothing paired (fresh device): keep the stored flags, but never migrate to
-  // an empty preset.
-  if(!p.screens[0].enabled&&!p.screens[1].enabled&&!p.screens[2].enabled)placeOnScreen(p.screens,0);
+  // Nothing paired (fresh device): only slot 0 is on screen; unpaired slots stay hidden.
+  if(!paired){for(unsigned i=0;i<3;++i)p.screens[i].enabled=0;placeOnScreen(p.screens,0);}
   result.activeIndex=0;result.arrangement=old.active;result.generation=old.generation;
   return result;
 }
