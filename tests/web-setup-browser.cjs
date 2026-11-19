@@ -254,7 +254,8 @@ const assert=require('node:assert/strict');
  // Stale draft: the preset changes elsewhere, then an activation; Save must still ask for a reload.
  await layout.locator('[data-slot="0"]').focus();await page.keyboard.press('ArrowDown');
  await page.evaluate(()=>{const p=window.setupState.presets;p.list.find(e=>e.index===0).screens[0].y+=500;++p.generation;});
- await page.waitForFunction(()=>window.setupState.presets.generation>0);
+ const polled=await page.evaluate(()=>window.requests.filter(r=>r.op==='status').length);
+ await page.waitForFunction(n=>window.requests.filter(r=>r.op==='status').length>n+1,polled);
  await page.evaluate(()=>{const p=window.setupState.presets;p.active=1;++p.generation;});
  await bar.getByRole('button',{name:'Home PC, active',exact:true}).waitFor();
  await layout.locator('[data-save]').click();
