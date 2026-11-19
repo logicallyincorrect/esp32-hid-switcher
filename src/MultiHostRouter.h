@@ -86,6 +86,7 @@ public:
     return slot < 3 && _links[slot].handle != NONE && _links[slot].ready && (_links[slot].subscriptions & 1);
   }
   unsigned selected() const { return _selected; }
+  uint16_t selectedHandle() const { return _links[_selected].handle; }
 private:
   Link _links[3];
   unsigned _selected = 0;
