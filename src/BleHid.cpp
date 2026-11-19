@@ -13,6 +13,21 @@ static_assert(MYNEWT_VAL(BLE_SM_MAX_PROCS)>=3,"Need one security procedure per h
 static_assert(MYNEWT_VAL(BLE_STORE_MAX_CCCDS)>=12,"Need persistent subscriptions for all hosts");
 
 #include "HidReportMap.h"
+#include <atomic>
+
+namespace {
+// NimBLE's default overflow handler unpairs the oldest computer to make room
+// for a subscription record. Never trade a pairing for one: the live
+// subscription still works and only its persistence is skipped.
+std::atomic<uint32_t> skippedSubscriptionWrites{0};
+struct StorePolicy : NimBLEDeviceCallbacks {
+  int onStoreStatus(ble_store_status_event *event,void *arg) override {
+    if(event->event_code==BLE_STORE_EVENT_OVERFLOW&&(event->overflow.obj_type==BLE_STORE_OBJ_TYPE_CCCD||
+       event->overflow.obj_type==BLE_STORE_OBJ_TYPE_CSFC)){++skippedSubscriptionWrites;return BLE_HS_ESTORE_CAP;}
+    return ble_store_util_status_rr(event,arg);
+  }
+} storePolicy;
+}
 
 void BleHid::begin(uint8_t slot) {
   _events = xQueueCreate(32, sizeof(Event));
@@ -57,9 +72,15 @@ void BleHid::begin(uint8_t slot) {
   _absolutePointer.select(_config.selected,millis());
   _deviceName=_prefs.getString("ble-name",Board::defaultName);
   if(!validDeviceName(_deviceName.c_str(),_deviceName.length()))_deviceName=Board::defaultName;
+  NimBLEDevice::setDeviceCallbacks(&storePolicy);
   NimBLEDevice::init(_deviceName.c_str());
   for(unsigned i=0;i<3;++i)if(_config.slots[i].assigned==2)forgetComputer(i);
-  Serial.printf("[BLE diagnostic] restored bonds=%u\n",NimBLEDevice::getNumBonds());
+  int subscriptions=0;ble_store_util_count(BLE_STORE_OBJ_TYPE_CCCD,&subscriptions);
+  Serial.printf("[BLE diagnostic] restored bonds=%u subscriptions=%d/%d\n",NimBLEDevice::getNumBonds(),subscriptions,MYNEWT_VAL(BLE_STORE_MAX_CCCDS));
+  for(int i=0;i<NimBLEDevice::getNumBonds();++i){
+    const auto address=NimBLEDevice::getBondedAddress(i);
+    Serial.printf("[BLE diagnostic] bond %s slot=%d\n",address.toString().c_str(),knownSlot(*address.getBase())+1);
+  }
   // Destination pairing must also work before an input keyboard is usable.
   // The BLE input worker temporarily enables passkey display for its pairing.
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
@@ -243,6 +264,10 @@ void BleHid::handle(const Event &e) {
 
 
 void BleHid::loop() {
+  static uint32_t reportedSkips=0;
+  if(const uint32_t skips=skippedSubscriptionWrites;skips!=reportedSkips){
+    reportedSkips=skips;Serial.printf("[BLE] Subscription storage full; kept all pairings (skipped=%lu)\n",(unsigned long)skips);
+  }
   _shortcutRecorder.tick(millis());
 
   portENTER_CRITICAL(&_eventMux); bool overflow = _eventOverflow; _eventOverflow = false; portEXIT_CRITICAL(&_eventMux);
@@ -365,12 +390,10 @@ void BleHid::tuneInterval(){
     if(_prefs.putBool("latency-probe",false)!=1){_intervalTuningDisabled=true;return;}
     _intervalProbeSince=0;
   }
-  // Keyboard and primary mouse reports. Hosts need not subscribe to the
-  // calibration-only relative report (Windows does not).
   bool settled=true;
   for(const auto &p:_peers)if(p.handle!=MultiHostRouter::NONE){
     ble_gap_conn_desc live;
-    if(!p.encrypted||(p.subscribed&3)!=3||ble_gap_conn_find(p.handle,&live)!=0||!live.sec_state.encrypted)settled=false;
+    if(!p.encrypted||(p.subscribed&PointerMode::outputSubscriptions)!=PointerMode::outputSubscriptions||ble_gap_conn_find(p.handle,&live)!=0||!live.sec_state.encrypted)settled=false;
   }
   if(!settled){_linksSettledSince=0;return;}
   if(!_linksSettledSince){_linksSettledSince=now;return;}
@@ -696,7 +719,7 @@ void BleHid::serviceEdges(bool allowed){
   const uint32_t now=millis();uint8_t ready=0;
   if(calibrationActive()||!_seamlessEnabled)allowed=false;
   for(const auto &p:_peers)if(p.slot>=0&&!p.forgetting&&p.encrypted&&
-      (p.subscribed&PointerMode::subscriptions)==PointerMode::subscriptions&&connected(unsigned(p.slot)))ready|=1u<<p.slot;
+      (p.subscribed&PointerMode::outputSubscriptions)==PointerMode::outputSubscriptions&&connected(unsigned(p.slot)))ready|=1u<<p.slot;
   if(_edgeConfigGeneration!=_config.generation){_edges.reset(now);_absolutePointer.reset(now);_edgeConfigGeneration=_config.generation;}
   if(PointerMode::absolute){
     _absolutePointer.sync(selected(),ready,allowed,now);
