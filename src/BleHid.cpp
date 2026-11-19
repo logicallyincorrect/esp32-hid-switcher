@@ -43,7 +43,9 @@ void BleHid::begin(uint8_t slot) {
   _edges.setThreshold(_prefs.getUInt("edge-distance",EdgeSettings::defaultDistance),millis());
   // An interrupted timing probe stays disabled across reboot; normal pairing
   // and input still work. Do not repeatedly trigger a controller fault.
-  _intervalTuningDisabled=_prefs.getBool("interval-probe",false);
+  // The former 11.25 ms request used "interval-probe"; this procedure differs.
+  _intervalTuningDisabled=_prefs.getBool("latency-probe",false);
+  if(_intervalTuningDisabled)Serial.println("[BLE timing] Disabled: a previous timing request was interrupted");
   if(_prefs.getBytesLength("shortcuts")==sizeof(_shortcuts)){
     ShortcutConfig saved;
     if(_prefs.getBytes("shortcuts",&saved,sizeof(saved))==sizeof(saved)&&validShortcuts(saved))_shortcuts=saved;
@@ -325,7 +327,12 @@ void BleHid::flushInput(){
   MouseReport mouse;
   const bool relative=PointerMode::absolute&&!useAbsolutePointer();
   auto &queue=relative?_calibrationPending:_pendingMouse;
-  if(queue.peek(mouse) && _mouseCadence.due(now,intervalUs)) {
+  // Hosts that accept one packet per connection event leave no headroom at
+  // this cadence. Never queue motion behind undelivered reports: it merges
+  // while waiting, so the next report is current instead of increasingly late.
+  const uint16_t handle=_router.selectedHandle();
+  const bool backlogged=handle!=MultiHostRouter::NONE&&ControllerDiagnostics::inFlight(handle)>=2;
+  if(!backlogged && queue.peek(mouse) && _mouseCadence.due(now,intervalUs)) {
     const uint8_t bytes[7]={uint8_t(PointerMode::absolute&&!relative?(mouse.buttons&0x1f):mouse.buttons),uint8_t(mouse.x),uint8_t(uint16_t(mouse.x)>>8),uint8_t(mouse.y),uint8_t(uint16_t(mouse.y)>>8),uint8_t(mouse.wheel),uint8_t(mouse.pan)};
     // Exactly one mouse path owns the entire gesture, including scrolling.
     const bool sent=relative?_router.tryRelativeMouse(bytes):_router.tryMouse(bytes);
@@ -355,30 +362,37 @@ void BleHid::tuneInterval(){
   if(_intervalProbeSince){
     if(now-_intervalProbeSince<10000)return;
     if(!_intervalProbeComplete)return;
-    if(_prefs.putBool("interval-probe",false)!=1){_intervalTuningDisabled=true;return;}
+    if(_prefs.putBool("latency-probe",false)!=1){_intervalTuningDisabled=true;return;}
     _intervalProbeSince=0;
   }
+  // Keyboard and primary mouse reports. Hosts need not subscribe to the
+  // calibration-only relative report (Windows does not).
   bool settled=true;
   for(const auto &p:_peers)if(p.handle!=MultiHostRouter::NONE){
     ble_gap_conn_desc live;
-    if(!p.encrypted||p.subscribed!=3||ble_gap_conn_find(p.handle,&live)!=0||!live.sec_state.encrypted)settled=false;
+    if(!p.encrypted||(p.subscribed&3)!=3||ble_gap_conn_find(p.handle,&live)!=0||!live.sec_state.encrypted)settled=false;
   }
   if(!settled){_linksSettledSince=0;return;}
   if(!_linksSettledSince){_linksSettledSince=now;return;}
   if(now-_linksSettledSince<5000)return;
-  for(auto &p:_peers)if(p.slot==int(selected())&&p.handle!=MultiHostRouter::NONE&&!p.intervalAttempted){
+  // Peripheral latency delays reports: this controller can commit to skipping
+  // events before a new report arrives (measured on Windows: +10 ms mean,
+  // longer spikes). Hosts cache accepted parameters across reconnects, so
+  // actively restore zero latency at the host's own interval.
+  constexpr uint16_t timeout=400;
+  for(auto &p:_peers)if(p.slot>=0&&p.handle!=MultiHostRouter::NONE&&!p.intervalAttempted){
     p.intervalAttempted=true;
     ble_gap_conn_desc live;
-    if(ble_gap_conn_find(p.handle,&live)!=0||live.conn_itvl<=9)return;
-    if(_prefs.putBool("interval-probe",true)!=1){_intervalTuningDisabled=true;return;}
+    if(ble_gap_conn_find(p.handle,&live)!=0||live.conn_latency==0)continue;
+    if(_prefs.putBool("latency-probe",true)!=1){_intervalTuningDisabled=true;return;}
     _intervalProbeSince=now;_intervalProbeHandle=p.handle;_intervalProbeComplete=false;
     ble_gap_upd_params params{};
-    params.itvl_min=9;params.itvl_max=9;params.latency=0;params.supervision_timeout=400;
+    params.itvl_min=live.conn_itvl;params.itvl_max=live.conn_itvl;params.latency=0;params.supervision_timeout=timeout;
     int rc=ble_gap_update_params(p.handle,&params);
     if(rc==BLE_HS_HCI_ERR(BLE_ERR_INV_HCI_CMD_PARMS)){
       // Standard peripheral L2CAP request lets the central initiate the update
       // when this controller rejects the local HCI procedure.
-      ble_l2cap_sig_update_params request{9,9,0,400};
+      ble_l2cap_sig_update_params request{live.conn_itvl,live.conn_itvl,0,timeout};
       rc=ble_l2cap_sig_update(p.handle,&request,[](uint16_t handle,int status,void *context){
         if(status==0)return; // Wait for the actual connection-update event.
         auto self=static_cast<BleHid *>(context);
@@ -390,7 +404,7 @@ void BleHid::tuneInterval(){
       Serial.printf("[BLE timing] L2CAP request rc=%d\n",rc);
     }
     if(rc!=0)_intervalProbeComplete=true;
-    Serial.printf("[BLE timing] slot=%d requested=11.25ms previous=%.2fms rc=%d\n",p.slot+1,live.conn_itvl*1.25,rc);
+    Serial.printf("[BLE timing] slot=%d interval=%.2fms restoring latency=0 previous=%u rc=%d\n",p.slot+1,live.conn_itvl*1.25,live.conn_latency,rc);
     return;
   }
 }

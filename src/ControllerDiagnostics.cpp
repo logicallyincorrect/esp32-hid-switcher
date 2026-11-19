@@ -58,6 +58,13 @@ void ControllerDiagnostics::appendStatus(JsonObject out){
   }
 }
 
+unsigned ControllerDiagnostics::inFlight(uint16_t handle){
+  unsigned count=0;
+  ble_hs_lock();auto conn=ble_hs_conn_find(handle);
+  if(conn){count=conn->bhc_outstanding_pkts;os_mbuf_pkthdr *p;STAILQ_FOREACH(p,&conn->bhc_tx_q,omp_next)++count;STAILQ_FOREACH(p,&conn->att_tx_q,omp_next)++count;}
+  ble_hs_unlock();return count;
+}
+
 void ControllerDiagnostics::printStatus(){
   TimingStats mouse,keyboard,window,batch,spacing;uint32_t sent,returned,unmatched,overflow,pending=0,peak=0;
   portENTER_CRITICAL(&trackerMux);mouse=tracker.completed[2];keyboard=tracker.completed[1];sent=tracker.sent;returned=tracker.returned;unmatched=tracker.unmatched;overflow=tracker.overflow;
