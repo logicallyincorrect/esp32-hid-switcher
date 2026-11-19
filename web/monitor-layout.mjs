@@ -134,8 +134,9 @@ export class MonitorArrangement {
     this.presets=presets;
     if(presets&&!presets.list.some(p=>p.index===this.viewing)){this.viewing=presets.active;this.dirty=false;this.renaming=false;}
     // A preset activation bumps the generation without touching the viewed preset:
-    // keep an unsaved draft saveable when its stored base is unchanged.
-    if(this.dirty&&baseViewed&&this.draft&&presets.generation!==baseGeneration){
+    // keep an unsaved draft saveable when its stored base is unchanged. A draft
+    // already behind the previous generation was built from an older preset: never rebase it.
+    if(this.dirty&&baseViewed&&this.draft&&this.draft.generation===baseGeneration&&presets.generation!==baseGeneration){
       const now=presets.list.find(p=>p.index===baseViewed.index);
       if(now&&now.name===baseViewed.name&&JSON.stringify(now.screens)===JSON.stringify(baseViewed.screens))this.draft.generation=presets.generation;
     }

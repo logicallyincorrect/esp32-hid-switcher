@@ -251,6 +251,17 @@ const assert=require('node:assert/strict');
  await page.waitForFunction(n=>window.requests.filter(r=>r.op==='preset-save').length>n,priorSaves);
  await page.waitForFunction(()=>document.querySelector('#monitor-arrangement [data-save]').hidden);
  assert.equal((await layout.locator('[data-status]').textContent()).includes('Reload'),false);
+ // Stale draft: the preset changes elsewhere, then an activation; Save must still ask for a reload.
+ await layout.locator('[data-slot="0"]').focus();await page.keyboard.press('ArrowDown');
+ await page.evaluate(()=>{const p=window.setupState.presets;p.list.find(e=>e.index===0).screens[0].y+=500;++p.generation;});
+ await page.waitForFunction(()=>window.setupState.presets.generation>0);
+ await page.evaluate(()=>{const p=window.setupState.presets;p.active=1;++p.generation;});
+ await bar.getByRole('button',{name:'Home PC, active',exact:true}).waitFor();
+ await layout.locator('[data-save]').click();
+ await page.waitForFunction(()=>document.querySelector('#monitor-arrangement [data-status]').textContent.includes('Reload'));
+ await layout.locator('[data-discard]').click();
+ await page.evaluate(()=>{const p=window.setupState.presets;p.active=0;++p.generation;});
+ await bar.getByRole('button',{name:'Default, active',exact:true}).waitFor();
  for(const width of [320,390]){
    await page.setViewportSize({width,height:900});
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`preset overflow at ${width}`);
