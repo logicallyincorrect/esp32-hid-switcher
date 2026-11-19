@@ -56,7 +56,7 @@ struct MonitorLayout {
     unsigned source=from;int64_t point=int64_t(horizontal?initial.y:initial.x)*32767+int64_t(horizontal?ny:nx)*(horizontal?initial.height:initial.width);
     for(unsigned hop=0;hop<3;++hop){
       const Screen a=projected(source);
-      for(unsigned i=0;i<3;++i){const auto &b=screens[i];if(i==source||(!b.enabled&&!(ready&(1u<<i)))||!(ready&(1u<<i)))continue;
+      for(unsigned i=0;i<3;++i){const auto &b=screens[i];if(i==source||!b.enabled||!(ready&(1u<<i)))continue;
       const Screen candidate=projected(i);
       const bool touching=side==1?int64_t(a.x)+a.width==candidate.x:side==-1?int64_t(candidate.x)+candidate.width==a.x:side==2?int64_t(a.y)+a.height==candidate.y:int64_t(candidate.y)+candidate.height==a.y;
       if(!touching)continue;

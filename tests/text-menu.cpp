@@ -68,6 +68,9 @@ struct FakeBackend {
   bool resetBindings(){shortcuts={};++saves;return true;}
   bool pairs[3]={true,true,false};unsigned forgotten=99;
   bool paired(unsigned i){return pairs[i];}
+  std::string presetList(){return "1 Work Mac (active)\n2 Home PC\n";}
+  int activated=-1;std::string activateError;
+  std::string activatePreset(unsigned i){activated=int(i);return activateError;}
   std::string forget(unsigned i){forgotten=i;pairs[i]=false;if(i==slot){online=false;++revision;}return "";}
   uint32_t now=0;
   bool beginRecord(unsigned action){recorder.begin(action,now,0);return true;}
@@ -139,6 +142,13 @@ int main(){
   pages.press('n');assert(pages.b.output.find("3 Device 12")!=std::string::npos);
   pages.press('4');assert(pages.b.bleCommand=="scan all");
   pages.press('p');pages.press('n');pages.press('3');assert(pages.b.bleCommand=="connect 12");
+  Fixture presets;presets.b.absolute=true;presets.open();presets.press('9');
+  assert(presets.b.output.find("Layout presets\n1 Work Mac (active)")!=std::string::npos&&presets.b.output.find("2 Home PC")!=std::string::npos);
+  presets.press('3');assert(presets.b.activated<0);
+  presets.press('2');assert(presets.b.activated==1&&presets.b.output.rfind("9 Layout presets")!=std::string::npos);
+  presets.press('9');presets.b.activateError="Could not save presets";presets.press('1');assert(presets.b.output.find("Could not save presets")!=std::string::npos);
+  presets.press('9');presets.back();presets.press('9');
+  Fixture noPresets;noPresets.open();noPresets.press('9');assert(noPresets.b.activated<0&&noPresets.b.output.find("Layout presets")==std::string::npos);
   Fixture pointer;pointer.b.absolute=true;pointer.open();pointer.press('7');
   pointer.press('4');pointer.press('2');pointer.press('\n');assert(pointer.b.speed==100);pointer.press('y');assert(pointer.b.speed==42);
   pointer.press('7');pointer.press('0');pointer.press('\n');assert(pointer.b.output.find("whole percentage")!=std::string::npos);

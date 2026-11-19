@@ -32,6 +32,14 @@ int main(){
     assert(shortcutDestination(Previous,current,mask)==previous);
     for(int slot=0;slot<3;++slot)assert(shortcutDestination(3+slot,current,mask)==unsigned(slot));
   }
+  // Hidden (not on screen) computer 1 is connected: Cycle/Next/Previous skip it, Slot + 2 reaches it.
+  {const uint8_t connected=7,onScreen=0b101;
+   assert(shortcutReachable(Cycle,connected,onScreen)==0b101&&shortcutReachable(Next,connected,onScreen)==0b101&&shortcutReachable(Previous,connected,onScreen)==0b101);
+   assert(shortcutReachable(Slot+1,connected,onScreen)==7&&shortcutReachable(Slot,0b010,0b101)==0b010&&shortcutReachable(Cycle,0b010,0b101)==0);
+   assert(shortcutDestination(Cycle,0,shortcutReachable(Cycle,connected,onScreen))==2);
+   assert(shortcutDestination(Next,2,shortcutReachable(Next,connected,onScreen))==0);
+   assert(shortcutDestination(Previous,2,shortcutReachable(Previous,connected,onScreen))==0);
+   assert(shortcutDestination(Slot+1,0,shortcutReachable(Slot+1,connected,onScreen))==1);}
   ShortcutRecorder r;r.begin(Cycle,0,0);
   assert(r.keyboard(empty,0x81));assert(r.state==ShortcutRecorder::Armed);
   assert(r.keyboard(tab,0x81));assert(r.state==ShortcutRecorder::Capturing);
@@ -57,4 +65,22 @@ int main(){
   r.keyboard(empty,0);assert(r.state==ShortcutRecorder::Ready&&!r.consuming());
   r.begin(Next,0,0,2);r.keyboard(tab,0);r.keyboard(empty,0);assert(r.state==ShortcutRecorder::Armed);
   r.mouse(8);r.mouse(0);assert(r.state==ShortcutRecorder::Ready&&!r.consuming());
+  {
+    ShortcutConfig base;PresetShortcutConfig presets;
+    assert(validShortcutSet(base,presets));
+    const uint8_t w[6]={0x1a};presets.bindings[presetBindingIndex(Preset1,1)]=keyboardBinding(w,0x05);
+    assert(validShortcutSet(base,presets));
+    assert(matchingPresetShortcut(presets,w,0x05,0,0,0b0001)==Preset1);
+    assert(matchingPresetShortcut(presets,w,0x05,0,0,0b0000)==-1); // unused preset: keys pass through
+    // Conflict with Cycle (Ctrl+Cmd+Tab) and with the Slot chord's digits.
+    const uint8_t tab[6]={0x2b};auto clash=presets;clash.bindings[presetBindingIndex(NextPreset,1)]=keyboardBinding(tab,0x09);
+    assert(!validShortcutSet(base,clash));
+    const uint8_t one[6]={0x1e};clash=presets;clash.bindings[presetBindingIndex(Preset1+1,1)]=keyboardBinding(one,0x09);
+    assert(!validShortcutSet(base,clash));
+    // Two presets with the same binding conflict.
+    clash=presets;clash.bindings[presetBindingIndex(Preset1+2,1)]=keyboardBinding(w,0x05);assert(!validShortcutSet(base,clash));
+    // Mouse binding for Next preset.
+    auto mouse=presets;ShortcutBinding m;m.kind=2;m.buttons=0x18;mouse.bindings[presetBindingIndex(NextPreset,2)]=m;
+    const uint8_t none[6]={};assert(validShortcutSet(base,mouse)&&matchingPresetShortcut(mouse,none,0,0x18,2,0b0001)==NextPreset);
+  }
 }

@@ -48,10 +48,26 @@ void BleHid::begin(uint8_t slot) {
     }
     if(!saveConfig(_config)){Serial.println("[Config] Cannot save slot assignments");abort();}
   }
-  const size_t layoutSize=_prefs.getBytesLength("monitor-layout");
-  if(layoutSize==sizeof(MonitorLayout)||layoutSize==sizeof(MonitorLayout::Legacy)){
-    uint8_t bytes[sizeof(MonitorLayout)];
-    if(_prefs.getBytes("monitor-layout",bytes,layoutSize)==layoutSize)_absolutePointer.layout.load(bytes,layoutSize);
+  {
+    LayoutPresets saved;
+    const bool loaded=_prefs.getBytesLength("layout-presets")==sizeof(saved)&&
+      _prefs.getBytes("layout-presets",&saved,sizeof(saved))==sizeof(saved)&&_presets.load(&saved,sizeof(saved));
+    if(!loaded){
+      // Leave "monitor-layout" untouched so a firmware rollback still finds it.
+      MonitorLayout old;
+      const size_t layoutSize=_prefs.getBytesLength("monitor-layout");
+      if(layoutSize==sizeof(MonitorLayout)||layoutSize==sizeof(MonitorLayout::Legacy)){
+        uint8_t bytes[sizeof(MonitorLayout)];
+        if(_prefs.getBytes("monitor-layout",bytes,layoutSize)==layoutSize)old.load(bytes,layoutSize);
+      }
+      uint8_t paired=0;
+      for(unsigned i=0;i<3;++i)if(_config.slots[i].assigned==1)paired|=1u<<i;
+      _presets=migratePresets(old,paired);
+      if(!_presets.valid())_presets=migratePresets(MonitorLayout{},0b001);
+      if(_prefs.putBytes("layout-presets",&_presets,sizeof(_presets))!=sizeof(_presets))Serial.println("[Preset] Could not save migrated presets");
+      else Serial.println("[Preset] Migrated arrangement to preset \"Default\"");
+    }
+    _absolutePointer.layout=_presets.runtime();
   }
   _sharedSpeed=_prefs.getUInt("pointer-speed",SharedPointerScale::defaultSpeed);
   if(!SharedPointerScale::valid(_sharedSpeed))_sharedSpeed=SharedPointerScale::defaultSpeed;
@@ -64,6 +80,10 @@ void BleHid::begin(uint8_t slot) {
   if(_prefs.getBytesLength("shortcuts")==sizeof(_shortcuts)){
     ShortcutConfig saved;
     if(_prefs.getBytes("shortcuts",&saved,sizeof(saved))==sizeof(saved)&&validShortcuts(saved))_shortcuts=saved;
+  }
+  if(PointerMode::absolute&&_prefs.isKey("preset-shortcuts")&&_prefs.getBytesLength("preset-shortcuts")==sizeof(_presetShortcuts)){
+    PresetShortcutConfig saved;
+    if(_prefs.getBytes("preset-shortcuts",&saved,sizeof(saved))==sizeof(saved)&&validShortcutSet(_shortcuts,saved))_presetShortcuts=saved;
   }
   applyIdentities();
   _seamlessEnabled=_prefs.getBool("seamless",false);
@@ -240,6 +260,9 @@ void BleHid::handle(const Event &e) {
       if(!saveConfig(next)) { Serial.println("[BLE] Could not save pairing slot");_server->disconnect(e.handle);return; }
       _config=next;applyIdentities();
       Serial.printf("[BLE] Saved computer to slot %d\n", slot + 1);
+      // A new computer appears on screen in the active preset only.
+      LayoutPresets presets=_presets;placeOnScreen(presets.presets[presets.activeIndex].screens,unsigned(slot));++presets.generation;
+      if(!savePresets(presets))Serial.println("[Preset] Could not place the new computer on screen");
     }
     for (auto &other : _peers)
       if (&other != p && other.handle != MultiHostRouter::NONE && other.slot == slot) {
@@ -532,47 +555,72 @@ String BleHid::recordedLabel()const{
   return shortcutLabel(_shortcutRecorder.candidate)+(_shortcutRecorder.target==Slot?" + 1/2/3":"");
 }
 String BleHid::bindingLabel(unsigned action,unsigned kind)const{
-  if(action>3||(kind!=1&&kind!=2)||(action==3&&kind==2))return "Not available";
-  const auto &binding=_shortcuts.bindings[shortcutBindingIndex(action,kind)];
+  if(action>Preset1+3||(kind!=1&&kind!=2)||(action==Slot&&kind==2))return "Not available";
+  const auto &binding=presetAction(action)?_presetShortcuts.bindings[presetBindingIndex(action,kind)]:_shortcuts.bindings[shortcutBindingIndex(action,kind)];
   if(emptyShortcut(binding))return "Not set";
   return shortcutLabel(binding)+(action==Slot?" + 1/2/3":"");
 }
 void BleHid::appendShortcuts(JsonObject result)const{
   result["generation"]=_shortcuts.generation;
   auto list=result["bindings"].to<JsonArray>();
-  // Compact tuples keep all seven bindings within one 512-byte ATT value.
-  for(unsigned i=0;i<ShortcutBindingCount;++i){const auto &b=_shortcuts.bindings[i];auto item=list.add<JsonArray>();
-    item.add(i/2);item.add(b.kind);item.add(b.modifiers);auto keys=item.add<JsonArray>();
+  // Compact [action, kind, modifiers, keys, buttons] tuples keep the reply small.
+  auto add=[&list](unsigned action,const ShortcutBinding &b){auto item=list.add<JsonArray>();
+    item.add(action);item.add(b.kind);item.add(b.modifiers);auto keys=item.add<JsonArray>();
     for(auto key:b.keys)if(key)keys.add(key);item.add(b.buttons);
-  }
+  };
+  for(unsigned i=0;i<ShortcutBindingCount;++i)add(i/2,_shortcuts.bindings[i]);
+  // Next preset (4) and Preset 1-4 (5-8) exist only in absolute builds.
+  if(PointerMode::absolute)for(unsigned i=0;i<PresetBindingCount;++i)add(NextPreset+i/2,_presetShortcuts.bindings[i]);
 }
 bool BleHid::shortcutCommand(JsonVariantConst command,JsonObject result,String &error){
   const char *op=command["op"]|"";
+  const unsigned lastAction=Preset1+LayoutPresets::Count-1;
+  // The recorder's revision covers both blobs; any save changes the sum.
+  const uint32_t revision=_shortcuts.generation+_presetShortcuts.generation;
+  auto unavailablePreset=[this,&error](unsigned action,bool needUsed){
+    if(!presetAction(action))return false;
+    if(!PointerMode::absolute){error="Presets require absolute-pointer firmware";return true;}
+    if(needUsed&&action>=Preset1&&!_presets.presets[action-Preset1].used){error="Choose a saved preset";return true;}
+    return false;
+  };
   if(!strcmp(op,"shortcuts")){appendShortcuts(result);return true;}
   if(!strcmp(op,"shortcut-record")){
-    if(!command["action"].is<unsigned>()||command["action"].as<unsigned>()>3){error="Choose Cycle, Next, Previous, or Slot";return false;}
+    if(!command["action"].is<unsigned>()||command["action"].as<unsigned>()>lastAction){error="Choose Cycle, Next, Previous, Slot, Next preset, or a preset";return false;}
     if(_shortcutRecorder.active()){error="Another recording is active; cancel it or wait 60 seconds";return false;}
     const unsigned kind=command["kind"]|0u;
     if(kind>2||(command["action"].as<unsigned>()==Slot&&kind==2)){error="Unsupported shortcut input type";return false;}
+    if(unavailablePreset(command["action"],true))return false;
     char token[33];snprintf(token,sizeof(token),"%08lx%08lx%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random());_shortcutToken=token;
     releaseAll();
-    _shortcutRecorder.begin(command["action"],millis(),_shortcuts.generation,kind);
+    _shortcutRecorder.begin(command["action"],millis(),revision,kind);
     result["token"]=_shortcutToken;result["state"]="waiting";return true;
   }
   if(!strcmp(op,"shortcuts-reset")){
     if(_shortcutRecorder.active()){error="Cancel the recording before resetting shortcuts";return false;}
+    // Empty preset bindings never conflict, so clear them first.
+    PresetShortcutConfig presets;presets.generation=_presetShortcuts.generation+1;
+    if(_prefs.putBytes("preset-shortcuts",&presets,sizeof(presets))!=sizeof(presets)){error="Could not save shortcuts";return false;}
+    _presetShortcuts=presets;
     ShortcutConfig next;next.generation=_shortcuts.generation+1;
     if(_prefs.putBytes("shortcuts",&next,sizeof(next))!=sizeof(next)){error="Could not save shortcuts";return false;}
     _shortcuts=next;releaseAll();appendShortcuts(result);return true;
   }
   if(!strcmp(op,"shortcut-clear")){
     if(_shortcutRecorder.active()){error="Cancel the recording before clearing shortcuts";return false;}
-    if(!command["action"].is<unsigned>()||command["action"].as<unsigned>()>3||!command["kind"].is<unsigned>()){error="Choose an action and input type";return false;}
+    if(!command["action"].is<unsigned>()||command["action"].as<unsigned>()>lastAction||!command["kind"].is<unsigned>()){error="Choose an action and input type";return false;}
     const unsigned action=command["action"],kind=command["kind"];
     if((kind!=1&&kind!=2)||(action==Slot&&kind!=1)){error="Slot supports keyboard only";return false;}
-    ShortcutConfig next=_shortcuts;auto &binding=next.bindings[shortcutBindingIndex(action,kind)];binding={};binding.kind=kind;++next.generation;
-    if(_prefs.putBytes("shortcuts",&next,sizeof(next))!=sizeof(next)){error="Could not clear shortcut";return false;}
-    _shortcuts=next;releaseAll();appendShortcuts(result);return true;
+    if(unavailablePreset(action,false))return false;
+    if(presetAction(action)){
+      PresetShortcutConfig next=_presetShortcuts;auto &binding=next.bindings[presetBindingIndex(action,kind)];binding={};binding.kind=kind;++next.generation;
+      if(_prefs.putBytes("preset-shortcuts",&next,sizeof(next))!=sizeof(next)){error="Could not clear shortcut";return false;}
+      _presetShortcuts=next;
+    }else{
+      ShortcutConfig next=_shortcuts;auto &binding=next.bindings[shortcutBindingIndex(action,kind)];binding={};binding.kind=kind;++next.generation;
+      if(_prefs.putBytes("shortcuts",&next,sizeof(next))!=sizeof(next)){error="Could not clear shortcut";return false;}
+      _shortcuts=next;
+    }
+    releaseAll();appendShortcuts(result);return true;
   }
   const String token=command["token"]|"";
   if(!_shortcutToken.length()||token!=_shortcutToken){error="Recording session expired or belongs to another client";return false;}
@@ -585,11 +633,22 @@ bool BleHid::shortcutCommand(JsonVariantConst command,JsonObject result,String &
   }
   if(!strcmp(op,"shortcut-save")){
     if(_shortcutRecorder.state!=ShortcutRecorder::Ready){error="Record and release a shortcut first";return false;}
-    if(_shortcuts.generation!=_shortcutRecorder.generation){error="Shortcuts changed; record again";return false;}
-    ShortcutConfig next=_shortcuts;next.bindings[shortcutBindingIndex(_shortcutRecorder.target,_shortcutRecorder.candidate.kind)]=_shortcutRecorder.candidate;++next.generation;
-    if(!validShortcuts(next)){error="That combination conflicts with another shortcut";return false;}
-    if(_prefs.putBytes("shortcuts",&next,sizeof(next))!=sizeof(next)){error="Could not save shortcut";return false;}
-    _shortcuts=next;_shortcutRecorder.state=ShortcutRecorder::Idle;
+    if(revision!=_shortcutRecorder.generation){error="Shortcuts changed; record again";return false;}
+    const unsigned target=_shortcutRecorder.target,kind=_shortcutRecorder.candidate.kind;
+    if(unavailablePreset(target,true))return false;
+    // Validate against both blobs; write only the one that changed.
+    if(presetAction(target)){
+      PresetShortcutConfig next=_presetShortcuts;next.bindings[presetBindingIndex(target,kind)]=_shortcutRecorder.candidate;++next.generation;
+      if(!validShortcutSet(_shortcuts,next)){error="That combination conflicts with another shortcut";return false;}
+      if(_prefs.putBytes("preset-shortcuts",&next,sizeof(next))!=sizeof(next)){error="Could not save shortcut";return false;}
+      _presetShortcuts=next;
+    }else{
+      ShortcutConfig next=_shortcuts;next.bindings[shortcutBindingIndex(target,kind)]=_shortcutRecorder.candidate;++next.generation;
+      if(!validShortcutSet(next,_presetShortcuts)){error="That combination conflicts with another shortcut";return false;}
+      if(_prefs.putBytes("shortcuts",&next,sizeof(next))!=sizeof(next)){error="Could not save shortcut";return false;}
+      _shortcuts=next;
+    }
+    _shortcutRecorder.state=ShortcutRecorder::Idle;
     releaseAll();appendShortcuts(result);return true;
   }
   error="Unknown shortcut command";return false;
@@ -636,7 +695,11 @@ String BleHid::forgetComputer(unsigned slot){
       return removed;
     });
   applyIdentities();
-  if(result==ForgetResult::Done)return "";
+  if(result==ForgetResult::Done){
+    LayoutPresets presets=_presets;hideSlot(presets,slot);++presets.generation;
+    if(!savePresets(presets))Serial.println("[Preset] Could not hide the forgotten computer");
+    return "";
+  }
   Serial.printf("[Config] Pairing removal incomplete for slot %u; retry after restart if necessary\n",slot+1);
   return "Could not finish. Retry Forget pairing; a restart also retries pending removal.";
 }
@@ -657,6 +720,9 @@ bool BleHid::configure(const uint8_t order[3],const char names[3][33],uint32_t g
   _absolutePointer.select(selected(),millis());
   _router.absoluteOutput(useAbsolutePointer());
   for(auto &p:_peers)if(p.slot>=0)p.slot=knownSlot(p.identity);
+  // Presets follow the computer, not the slot number.
+  LayoutPresets presets=_presets;permutePresets(presets,order);++presets.generation;
+  if(!savePresets(presets))Serial.println("[Preset] Could not reorder presets");
   printStatus();return true;
 }
 
@@ -720,6 +786,8 @@ void BleHid::serviceEdges(bool allowed){
   if(calibrationActive()||!_seamlessEnabled)allowed=false;
   for(const auto &p:_peers)if(p.slot>=0&&!p.forgetting&&p.encrypted&&
       (p.subscribed&PointerMode::outputSubscriptions)==PointerMode::outputSubscriptions&&connected(unsigned(p.slot)))ready|=1u<<p.slot;
+  // A computer that is not on screen in the active preset is never a destination.
+  ready&=onScreenMask();
   if(_edgeConfigGeneration!=_config.generation){_edges.reset(now);_absolutePointer.reset(now);_edgeConfigGeneration=_config.generation;}
   if(PointerMode::absolute){
     _absolutePointer.sync(selected(),ready,allowed,now);
@@ -944,24 +1012,107 @@ void BleHid::appendLayout(JsonObject out)const{
   auto screens=out["screens"].to<JsonArray>();
   for(unsigned i=0;i<3;++i){const auto &s=layout.screens[i];auto item=screens.add<JsonObject>();item["x"]=s.x;item["y"]=s.y;item["width"]=s.width;item["height"]=s.height;item["enabled"]=bool(s.enabled);item["estimated"]=bool(s.estimated);item["sensitivity"]=s.sensitivity;item["span_x"]=_pointerTuning[i].spanX;item["span_y"]=_pointerTuning[i].spanY;}
 }
-bool BleHid::setLayout(JsonVariantConst request,String &error){
-  auto next=_absolutePointer.layout;
-  if(!PointerMode::absolute){error="Monitor arrangement requires absolute-pointer firmware";return false;}
-  if(!request["generation"].is<uint32_t>()||request["generation"].as<uint32_t>()!=next.generation){error="Arrangement changed. Reload it before saving.";return false;}
-  if(!request["active"].is<bool>()){error="Choose an arrangement mode";return false;}
-  auto screens=request["screens"].as<JsonArrayConst>();
+bool BleHid::parseScreens(JsonVariantConst value,const MonitorLayout::Screen fallback[3],MonitorLayout::Screen out[3],String &error)const{
+  auto screens=value.as<JsonArrayConst>();
   if(screens.size()!=3){error="Provide all three slot rectangles";return false;}
   for(unsigned i=0;i<3;++i){auto v=screens[i];
     if(!v["x"].is<int32_t>()||!v["y"].is<int32_t>()||!v["width"].is<uint32_t>()||!v["height"].is<uint32_t>()||!v["enabled"].is<bool>()||!v["estimated"].is<bool>()){error="Invalid monitor dimensions";return false;}
     if(!v["sensitivity"].isNull()&&!v["sensitivity"].is<unsigned>()){error="Screen sensitivity must be 25–400%";return false;}
-    const unsigned sensitivity=v["sensitivity"]|next.screens[i].sensitivity;
+    const unsigned sensitivity=v["sensitivity"]|fallback[i].sensitivity;
     if(sensitivity<25||sensitivity>400){error="Screen sensitivity must be 25–400%";return false;}
-    next.screens[i]={v["x"],v["y"],v["width"],v["height"],v["enabled"].as<bool>()?1u:0u,v["estimated"].as<bool>()?1u:0u,sensitivity};
+    out[i]={v["x"],v["y"],v["width"],v["height"],v["enabled"].as<bool>()?1u:0u,v["estimated"].as<bool>()?1u:0u,sensitivity};
   }
-  next.active=request["active"].as<bool>();++next.generation;
+  return true;
+}
+// Edits the active preset; status.monitor_layout keeps reporting it.
+bool BleHid::setLayout(JsonVariantConst request,String &error){
+  auto next=_presets.runtime();
+  if(!PointerMode::absolute){error="Monitor arrangement requires absolute-pointer firmware";return false;}
+  if(!request["generation"].is<uint32_t>()||request["generation"].as<uint32_t>()!=_presets.generation){error="Arrangement changed. Reload it before saving.";return false;}
+  if(!request["active"].is<bool>()){error="Choose an arrangement mode";return false;}
+  if(!parseScreens(request["screens"],next.screens,next.screens,error))return false;
+  next.active=request["active"].as<bool>();
   if(!next.valid()){error="Monitors must not overlap. Dimensions: 64–16384 pixels; positions: -65536–65536.";return false;}
-  if(_prefs.putBytes("monitor-layout",&next,sizeof(next))!=sizeof(next)){error="Could not save arrangement";return false;}
-  _absolutePointer.layout=next;_absolutePointer.reset(millis());return true;
+  LayoutPresets presets=_presets;
+  for(unsigned i=0;i<3;++i)presets.presets[presets.activeIndex].screens[i]=next.screens[i];
+  presets.arrangement=next.active;++presets.generation;
+  if(!presets.valid()){error="Keep at least one screen on screen";return false;}
+  if(!savePresets(presets)){error="Could not save arrangement";return false;}
+  return true;
+}
+bool BleHid::savePresets(const LayoutPresets &next){
+  if(!next.valid()||_prefs.putBytes("layout-presets",&next,sizeof(next))!=sizeof(next))return false;
+  _presets=next;_absolutePointer.layout=next.runtime();
+  const uint32_t now=millis();_absolutePointer.reset(now);_edges.reset(now);
+  return true;
+}
+void BleHid::appendPresets(JsonObject out)const{
+  out["generation"]=_presets.generation;out["active"]=_presets.activeIndex;out["arrangement"]=bool(_presets.arrangement);
+  auto list=out["list"].to<JsonArray>();
+  for(unsigned i=0;i<LayoutPresets::Count;++i){const auto &p=_presets.presets[i];if(!p.used)continue;
+    auto item=list.add<JsonObject>();item["index"]=i;item["name"]=p.name;
+    auto screens=item["screens"].to<JsonArray>();
+    for(const auto &s:p.screens){auto screen=screens.add<JsonObject>();screen["x"]=s.x;screen["y"]=s.y;screen["width"]=s.width;screen["height"]=s.height;screen["enabled"]=bool(s.enabled);screen["estimated"]=bool(s.estimated);screen["sensitivity"]=s.sensitivity;}
+  }
+}
+bool BleHid::savePresetCommand(JsonVariantConst request,String &error){
+  if(!request["index"].is<unsigned>()||request["index"].as<unsigned>()>=LayoutPresets::Count){error="Choose a preset from 1 to 4";return false;}
+  if(!request["generation"].is<uint32_t>()||request["generation"].as<uint32_t>()!=_presets.generation){error="Presets changed. Reload them before saving.";return false;}
+  const unsigned index=request["index"];
+  const char *name=request["name"].is<const char *>()?request["name"].as<const char *>():nullptr;
+  if(!validPresetName(name)){error="Preset names are 1–24 printable characters";return false;}
+  LayoutPresets next=_presets;auto &preset=next.presets[index];
+  const LayoutPreset blank;
+  MonitorLayout layout;layout.active=1;
+  if(!parseScreens(request["screens"],(preset.used?preset:blank).screens,layout.screens,error))return false;
+  if(!layout.valid()){error="Monitors must not overlap. Dimensions: 64–16384 pixels; positions: -65536–65536.";return false;}
+  preset.used=1;memset(preset.name,0,sizeof(preset.name));strcpy(preset.name,name);
+  for(unsigned i=0;i<3;++i)preset.screens[i]=layout.screens[i];
+  ++next.generation;
+  if(!next.valid()){error="Preset names must be unique, and each preset needs one screen on screen without overlaps";return false;}
+  if(!savePresets(next)){error="Could not save presets";return false;}
+  return true;
+}
+bool BleHid::deletePresetCommand(JsonVariantConst request,String &error){
+  if(!request["index"].is<unsigned>()||request["index"].as<unsigned>()>=LayoutPresets::Count){error="Choose a preset from 1 to 4";return false;}
+  if(!request["generation"].is<uint32_t>()||request["generation"].as<uint32_t>()!=_presets.generation){error="Presets changed. Reload them before deleting.";return false;}
+  const unsigned index=request["index"];
+  LayoutPresets next=_presets;
+  if(!deletePreset(next,index)){error="Choose a saved preset; the last preset cannot be deleted";return false;}
+  ++next.generation;
+  // Save the presets first; leftover bindings for an unused preset never match.
+  if(!savePresets(next)){error="Could not save presets";return false;}
+  // Then clear the deleted preset's shortcuts so a new preset in its place starts empty.
+  PresetShortcutConfig shortcuts=_presetShortcuts;bool cleared=false;
+  for(unsigned kind=1;kind<=2;++kind){auto &b=shortcuts.bindings[presetBindingIndex(Preset1+index,kind)];
+    if(!emptyShortcut(b)){b={};b.kind=kind;cleared=true;}}
+  if(cleared){
+    ++shortcuts.generation;
+    if(_prefs.putBytes("preset-shortcuts",&shortcuts,sizeof(shortcuts))!=sizeof(shortcuts)){error="Preset deleted, but its shortcuts could not be cleared";return false;}
+    _presetShortcuts=shortcuts;
+  }
+  return true;
+}
+String BleHid::activatePreset(unsigned index){
+  if(!PointerMode::absolute)return "Presets require absolute-pointer firmware";
+  if(index>=LayoutPresets::Count||!_presets.presets[index].used)return "Choose a saved preset";
+  if(index!=_presets.activeIndex){
+    uint8_t connectedMask=0;
+    for(unsigned i=0;i<3;++i)if(connected(i))connectedMask|=1u<<i;
+    const int slot=activationSlot(_presets,index,selected(),connectedMask);
+    // The generation bump makes an open page reload before editing the new layout.
+    LayoutPresets next=_presets;next.activeIndex=index;++next.generation;
+    if(!savePresets(next))return "Could not save presets";
+    if(slot>=0&&unsigned(slot)!=selected())selectSlot(uint8_t(slot));
+  }
+  Serial.printf("[Preset] Active: %s\n",_presets.presets[index].name);
+  return "";
+}
+int BleHid::presetShortcutAction(const uint8_t *keys,uint8_t modifiers,uint8_t buttons,uint8_t kind)const{
+  if(!PointerMode::absolute)return -1;
+  uint8_t used=0;
+  for(unsigned i=0;i<LayoutPresets::Count;++i)if(_presets.presets[i].used)used|=1u<<i;
+  return matchingPresetShortcut(_presetShortcuts,keys,modifiers,buttons,kind,used);
 }
 
 bool BleHid::setSharedSpeed(unsigned value){

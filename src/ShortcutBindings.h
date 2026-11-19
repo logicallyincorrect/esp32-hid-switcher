@@ -31,7 +31,7 @@ inline bool conflictingShortcut(const ShortcutBinding &a,const ShortcutBinding &
   auto subset=[](const ShortcutBinding &x,const ShortcutBinding &y){for(auto key:x.keys){if(!key)break;bool found=false;for(auto other:y.keys)found|=other==key;if(!found)return false;}return true;};
   return subset(a,b)||subset(b,a);
 }
-enum ShortcutAction { Cycle=0, Next=1, Previous=2, Slot=3 };
+enum ShortcutAction { Cycle=0, Next=1, Previous=2, Slot=3, NextPreset=4, Preset1=5 };
 constexpr unsigned ShortcutBindingCount=7;
 inline unsigned shortcutBindingIndex(unsigned action,unsigned kind){return 2*action+(kind==2);}
 inline bool emptyShortcut(const ShortcutBinding &b){
@@ -69,16 +69,58 @@ inline bool validShortcuts(const ShortcutConfig &config) {
   }
   return true;
 }
+// Shared per-binding match rule used by base and preset shortcuts.
+inline bool bindingMatches(const ShortcutBinding &b,const ShortcutBinding &keyboard,uint8_t modifiers,uint8_t buttons,uint8_t kind){
+  if(emptyShortcut(b)||(kind&&b.kind!=kind))return false;
+  if(b.kind==1)return sameShortcut(b,keyboard);
+  return b.kind==2&&b.buttons&&b.modifiers==shortcutModifiers(modifiers)&&b.buttons==buttons&&!keyboard.keys[0];
+}
 // 0..2 mean Cycle/Next/Previous; 3..5 mean direct destination slots 0..2.
 inline int matchingShortcut(const ShortcutConfig &config,const uint8_t *keys,uint8_t modifiers,uint8_t buttons,uint8_t kind=0) {
   const auto keyboard=keyboardBinding(keys,modifiers);
-  for(unsigned i=0;i<6;++i){const auto &b=config.bindings[i];if(emptyShortcut(b)||(kind&&b.kind!=kind))continue;
-    if(b.kind==1&&sameShortcut(b,keyboard))return int(i/2);
-    if(b.kind==2&&b.buttons&&b.modifiers==shortcutModifiers(modifiers)&&b.buttons==buttons&&!keyboard.keys[0])return int(i/2);
-  }
+  for(unsigned i=0;i<6;++i)if(bindingMatches(config.bindings[i],keyboard,modifiers,buttons,kind))return int(i/2);
   const auto &slot=config.bindings[6];
   if(kind!=2&&slot.modifiers&&slot.modifiers==keyboard.modifiers&&keyboard.keys[0]>=0x1e&&keyboard.keys[0]<=0x20&&!keyboard.keys[1])return 3+keyboard.keys[0]-0x1e;
   return -1;
+}
+constexpr unsigned PresetBindingCount=10;
+inline bool presetAction(unsigned action){return action>=NextPreset&&action<=Preset1+3;}
+inline unsigned presetBindingIndex(unsigned action,unsigned kind){return 2*(action-NextPreset)+(kind==2);}
+struct PresetShortcutConfig {
+  uint32_t version=1,generation=0;
+  // Keyboard/mouse pairs for NextPreset, Preset1..Preset4.
+  ShortcutBinding bindings[PresetBindingCount];
+  PresetShortcutConfig(){for(unsigned i=0;i<PresetBindingCount;++i)bindings[i].kind=i%2?2:1;}
+};
+// Base and preset shortcuts share one namespace: no preset binding may clash
+// with another binding or with the Slot chord's numbered variants.
+inline bool validShortcutSet(const ShortcutConfig &base,const PresetShortcutConfig &presets){
+  if(!validShortcuts(base)||presets.version!=1)return false;
+  const auto &slot=base.bindings[6];
+  for(unsigned i=0;i<PresetBindingCount;++i){const auto &b=presets.bindings[i];
+    if(b.kind!=(i%2?2:1))return false;
+    if(emptyShortcut(b))continue;
+    if(!validShortcut(b))return false;
+    for(unsigned j=0;j<6;++j)if(validShortcut(base.bindings[j])&&conflictingShortcut(b,base.bindings[j]))return false;
+    if(!emptyShortcut(slot))for(uint8_t digit=0x1e;digit<=0x20;++digit){auto numbered=slot;numbered.keys[0]=digit;if(conflictingShortcut(b,numbered))return false;}
+    for(unsigned j=0;j<i;++j)if(validShortcut(presets.bindings[j])&&conflictingShortcut(b,presets.bindings[j]))return false;
+  }
+  return true;
+}
+// Returns NextPreset or Preset1+i, or -1. Preset i's bindings only match when usedPresets bit i is set.
+inline int matchingPresetShortcut(const PresetShortcutConfig &config,const uint8_t *keys,uint8_t modifiers,uint8_t buttons,uint8_t kind,uint8_t usedPresets){
+  const auto keyboard=keyboardBinding(keys,modifiers);
+  for(unsigned i=0;i<PresetBindingCount;++i){
+    const unsigned action=NextPreset+i/2;
+    if(action>=Preset1&&!(usedPresets&(1u<<(action-Preset1))))continue;
+    if(bindingMatches(config.bindings[i],keyboard,modifiers,buttons,kind))return int(action);
+  }
+  return -1;
+}
+// Cycle/Next/Previous only reach connected computers that are on screen; the
+// direct Slot + N actions reach any connected computer.
+inline uint8_t shortcutReachable(int action,uint8_t connectedMask,uint8_t onScreenMask){
+  return action>=3?connectedMask:uint8_t(connectedMask&onScreenMask);
 }
 inline unsigned shortcutDestination(int action,unsigned current,uint8_t connectedMask){
   if(action>=3&&action<=5)return unsigned(action-3);

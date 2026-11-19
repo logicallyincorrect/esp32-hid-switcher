@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HID Switcher · Setup</title><link rel="stylesheet" href="style.css?v=screen-settings-3"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HID Switcher · Setup</title><link rel="stylesheet" href="style.css?v=layout-presets-1"></head>
 <body><main>
 <header><span class="eyebrow">HID SWITCHER / USB SETUP</span><h1>One keyboard.<br>Your computers.</h1><p>Install your switcher, connect a wireless keyboard, and make it yours. No keyboard connected to the switcher is needed to get started.</p></header>
 <div id="notice" role="status" aria-live="polite">Use desktop Chrome or Edge. Connect the Freenove ESP32-S3’s UART/programming port with a USB data cable.</div>
@@ -31,10 +31,10 @@
 <p id="calibration" role="status" aria-live="polite" hidden></p><p id="calibration-guide" class="small" hidden>Move to the selected computer’s top-left corner, click and release. Wait for the bottom-right prompt, then move smoothly to that corner and click again. These clicks stay on the switcher.</p>
 <form id="edge-form" class="edge-row"><div><label for="edge">Edge travel</label><p id="edge-help" class="small">Extra mouse movement past the edge before switching. Increase to avoid accidental switches.</p></div><div class="edge-value"><input id="edge" aria-describedby="edge-help" aria-label="Edge travel in mouse counts" type="number" min="1" required><span class="small">mouse counts</span><button id="edge-save" class="quiet" hidden>Save</button></div></form>
 </div></div>
-<div class="section-heading shortcut-heading"><h3>Shortcuts</h3><button id="reset-shortcuts" class="text-action">Restore defaults</button></div><div id="reset-shortcuts-confirm" class="actions" hidden><span>Restore all default shortcuts?</span><button id="confirm-reset-shortcuts" class="quiet">Restore</button><button id="cancel-reset-shortcuts" class="quiet">Cancel</button></div><p class="small">Use the pencil to record. Release the keys or mouse buttons to save automatically.</p>
+<div class="section-heading shortcut-heading"><h3>Shortcuts</h3><button id="reset-shortcuts" class="text-action">Restore defaults</button></div><div id="reset-shortcuts-confirm" class="actions" hidden><span>Restore all default shortcuts? Preset shortcuts are cleared.</span><button id="confirm-reset-shortcuts" class="quiet">Restore</button><button id="cancel-reset-shortcuts" class="quiet">Cancel</button></div><p class="small">Use the pencil to record. Release the keys or mouse buttons to save automatically.</p>
 <table class="shortcuts"><thead><tr><th>Action</th><th>Keyboard</th><th>Mouse</th></tr></thead><tbody id="bindings"></tbody></table>
 
 <p id="recording" class="small" role="status" aria-live="polite"></p>
 </section></fieldset>
 <footer>Settings are saved on the board. Disconnect when finished; the webpage does not need to stay open. The BOOT menu and serial CLI remain available.</footer>
-</main><script type="module" src="app.mjs?v=screen-settings-3"></script></body></html>
+</main><script type="module" src="app.mjs?v=layout-presets-1"></script></body></html>

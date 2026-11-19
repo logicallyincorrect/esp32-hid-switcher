@@ -34,6 +34,9 @@ int main(){
   l.screens[2].enabled=0;l.screens[1].width=0;assert(!l.valid());
   l.screens[1].width=1920;l.screens[1].x=65537;assert(!l.valid());
 
+  // A connected but not-on-screen computer is never an edge destination.
+  l.screens[0]={0,0,3440,1440,1};l.screens[1]={3440,0,1920,1080,0};l.screens[2]={5360,0,1920,1080,0};
+  assert(l.valid()&&l.crossing(0,1,32767,16384,7,x,y)==-1);
   AbsolutePointer p;p.layout.active=1;p.layout.screens[0]={0,0,3440,1440,1};p.layout.screens[1]={760,-1080,1920,1080,1};p.layout.screens[2].enabled=0;
   p.sync(0,3,true,0);p.positions[0]={16384,1};MouseReport r{0,0,-1,0,0};
   assert(p.motion(r,false,0,1,1,1,1));assert(p.destination()==1);

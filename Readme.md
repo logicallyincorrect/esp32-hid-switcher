@@ -60,7 +60,7 @@ Both options provide seamless edge switching, **off by default**. Choose the fir
 | Pointer after switching | Opposite edge, retaining normalized vertical position | Destination pointer stays where it was |
 | Mouse controls | Five buttons and vertical scroll in absolute mode | Eight buttons and horizontal/vertical scroll |
 
-Both use slots 1 → 2 → 3 from left to right, skip disconnected computers, and do not wrap at an outer edge. Dragging, held keys and configuration block automatic switching. Keyboard/mouse switching shortcuts work in either mode.
+Both use slots 1 → 2 → 3 from left to right, skip disconnected computers, and do not wrap at an outer edge. The companion-free build also skips computers that the active [layout preset](#screen-layout-presets) marks as not on screen. Dragging, held keys and configuration block automatic switching. Keyboard/mouse switching shortcuts work in either mode.
 
 For companion-free mode, select **6 Seamless switching → 1 Enable**. Missing calibration starts the two-corner procedure before switching can turn on. Recalibrate one slot or all connected computers through **6 → 3 Calibrate pointer**. The integrated build works on both tested computers, including absolute dragging. See [calibration instructions and limitations](docs/absolute-pointer.md).
 
@@ -71,6 +71,24 @@ An optional [macOS companion](companion/README.md) lets you push the pointer aga
 Shared monitor boundaries stay on the same computer. Dragging, held keys, and the setup menu disable edge switching. Keyboard and mouse shortcuts remain available.
 
 The normal build requires the companion, updated firmware, and **6 Seamless switching → 1 Enable**. Hardware validation is pending.
+
+## Screen layout presets
+
+A layout preset is a saved screen arrangement: for each computer, whether it is on screen, plus its position, resolution and speed. You can save up to four presets with names of up to 24 characters. Presets are available in the companion-free absolute-pointer build only, and they matter only while the custom arrangement is on.
+
+Example: a laptop on the left and one ultrawide monitor on the right. The monitor shows the Work Mac, the Home PC, or both side by side, and you change that on the monitor itself. The switcher cannot see which one is showing. Save one preset for each state and press the preset's shortcut when you change the monitor:
+
+- **Work Mac**: laptop and Work Mac on screen; Home PC **not on screen**.
+- **Home PC**: laptop and Home PC on screen, the Home PC at the rectangle where the Work Mac was; Work Mac **not on screen**.
+- **Split**: laptop, Work Mac and Home PC side by side.
+
+A computer that is not on screen in the active preset is never an edge-switching destination, even if it is connected. Cycle, Next and Previous skip it too. Slot shortcuts and the BOOT menu can still select it. Each preset needs at least one computer on screen.
+
+Activating a preset does not touch your keyboard and mouse while the selected computer is still on screen. If it is hidden by the new preset, input moves to the connected on-screen computer that took its place (the one whose rectangle overlaps the old one most, otherwise the lowest slot). If the custom arrangement is off, activating a preset only changes which preset is active.
+
+Create, rename, delete, arrange and activate presets on the [setup page](docs/usb-setup.md). Record shortcuts on the setup page (the BOOT menu cannot record them): one keyboard and one mouse shortcut for **Next preset** (steps through the presets and wraps) and for each of **Preset 1–4**. There are no defaults. The BOOT menu has **9 Layout presets**, which lists the presets and activates the one you choose; it cannot edit them. The active preset is kept after a restart.
+
+Updating from earlier firmware creates one preset named "Default" from your current arrangement. Your shortcuts and pairings are kept. See [technical details](docs/absolute-pointer.md#layout-presets).
 
 ## Configure the device
 
@@ -96,6 +114,7 @@ Use a text editor, not a command shell. Keep the document selected until you exi
 | Edge switching | Set the outward movement distance (1-10000 counts) |
 | Seamless switching | Opt in/out; calibrate one slot or All in the absolute build |
 | Pointer tuning | Advanced per-computer axis percentages (absolute build) |
+| Layout presets | List and activate screen layout presets (9, absolute build) |
 | BLE input devices | Scan, select, pair, reconnect, disconnect, or forget a wireless keyboard/trackpad (experimental BLE input build) |
 
 To change the edge distance, select **5 Edge switching**, enter a value, press Enter, then `y`. The value applies immediately and stays saved after restart.
@@ -112,12 +131,14 @@ The RGB LED is yellow in configuration mode. Normal keyboard and mouse input sto
 
 | Action | Function | Default | Input device |
 | --- | --- | --- | --- |
-| Cycle | Next connected computer | Ctrl + Cmd + Tab | Keyboard, mouse, or both |
-| Next | Next connected computer | None | Keyboard, mouse, or both |
-| Previous | Previous connected computer | None | Keyboard, mouse, or both |
+| Cycle | Next connected on-screen computer | Ctrl + Cmd + Tab | Keyboard, mouse, or both |
+| Next | Next connected on-screen computer | None | Keyboard, mouse, or both |
+| Previous | Previous connected on-screen computer | None | Keyboard, mouse, or both |
 | Slot | Any slot, including disconnected slots | Ctrl + Cmd + 1/2/3 | Keyboard only |
+| Next preset | Next layout preset (absolute build) | None | Keyboard, mouse, or both |
+| Preset 1–4 | Activate that preset (absolute build) | None | Keyboard, mouse, or both |
 
-Cycle, Next, and Previous skip disconnected computers and repeat through the slot list. With no other connected computer, selection stays unchanged.
+Cycle, Next, and Previous skip disconnected computers and, when the active layout preset hides a computer, that one too. They repeat through the slot list. With no other connected computer, selection stays unchanged.
 
 To change a shortcut:
 

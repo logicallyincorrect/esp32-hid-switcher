@@ -88,6 +88,22 @@ public:
   }
   bool paired(unsigned slot){return _ble.config().slots[slot].assigned!=0;}
   std::string forget(unsigned slot){return _ble.forgetComputer(slot).c_str();}
+  // Menu numbers count only saved presets, in order; map back to the stored index.
+  std::string presetList(){
+    std::string text;unsigned n=0;
+    for(unsigned i=0;i<LayoutPresets::Count;++i){
+      const auto &p=_ble.presets();if(!p.presets[i].used)continue;
+      text+=std::to_string(++n)+" "+p.presets[i].name;
+      if(i==p.activeIndex)text+=" (active)";
+      text+="\n";
+    }
+    return text;
+  }
+  std::string activatePreset(unsigned number){
+    unsigned n=0;
+    for(unsigned i=0;i<LayoutPresets::Count;++i)if(_ble.presets().presets[i].used&&n++==number)return _ble.activatePreset(i).c_str();
+    return "Choose a saved preset";
+  }
   unsigned calibrationReady(){return _ble.calibrationReady();}
   bool beginCalibration(unsigned mask,bool enableAfter){return _ble.beginCalibration(mask,enableAfter);}
   bool seamlessEnabled(){return _ble.seamlessEnabled();}
