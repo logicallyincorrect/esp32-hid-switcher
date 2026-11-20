@@ -11,4 +11,5 @@ python3 tests/hid-device-lookup.py
 python3 tests/usb-root-disconnect.py
 python3 tests/hid-open-cleanup.py
 python3 tests/usb-recovery-dispatch.py
+python3 tests/nvs-keys.py
 echo "Host firmware tests passed"
