@@ -15,6 +15,10 @@ static_assert(MYNEWT_VAL(BLE_STORE_MAX_CCCDS)>=12,"Need persistent subscriptions
 #include "HidReportMap.h"
 #include <atomic>
 
+// NVS key names are at most 15 characters; a longer key fails every write.
+static constexpr char presetShortcutsKey[]="preset-keys";
+static_assert(sizeof(presetShortcutsKey)<=16,"NVS keys are at most 15 characters");
+
 namespace {
 // NimBLE's default overflow handler unpairs the oldest computer to make room
 // for a subscription record. Never trade a pairing for one: the live
@@ -81,9 +85,9 @@ void BleHid::begin(uint8_t slot) {
     ShortcutConfig saved;
     if(_prefs.getBytes("shortcuts",&saved,sizeof(saved))==sizeof(saved)&&validShortcuts(saved))_shortcuts=saved;
   }
-  if(PointerMode::absolute&&_prefs.isKey("preset-shortcuts")&&_prefs.getBytesLength("preset-shortcuts")==sizeof(_presetShortcuts)){
+  if(PointerMode::absolute&&_prefs.isKey(presetShortcutsKey)&&_prefs.getBytesLength(presetShortcutsKey)==sizeof(_presetShortcuts)){
     PresetShortcutConfig saved;
-    if(_prefs.getBytes("preset-shortcuts",&saved,sizeof(saved))==sizeof(saved)&&validShortcutSet(_shortcuts,saved))_presetShortcuts=saved;
+    if(_prefs.getBytes(presetShortcutsKey,&saved,sizeof(saved))==sizeof(saved)&&validShortcutSet(_shortcuts,saved))_presetShortcuts=saved;
   }
   applyIdentities();
   _seamlessEnabled=_prefs.getBool("seamless",false);
@@ -599,7 +603,7 @@ bool BleHid::shortcutCommand(JsonVariantConst command,JsonObject result,String &
     if(_shortcutRecorder.active()){error="Cancel the recording before resetting shortcuts";return false;}
     // Empty preset bindings never conflict, so clear them first.
     PresetShortcutConfig presets;presets.generation=_presetShortcuts.generation+1;
-    if(_prefs.putBytes("preset-shortcuts",&presets,sizeof(presets))!=sizeof(presets)){error="Could not save shortcuts";return false;}
+    if(_prefs.putBytes(presetShortcutsKey,&presets,sizeof(presets))!=sizeof(presets)){error="Could not save shortcuts";return false;}
     _presetShortcuts=presets;
     ShortcutConfig next;next.generation=_shortcuts.generation+1;
     if(_prefs.putBytes("shortcuts",&next,sizeof(next))!=sizeof(next)){error="Could not save shortcuts";return false;}
@@ -613,7 +617,7 @@ bool BleHid::shortcutCommand(JsonVariantConst command,JsonObject result,String &
     if(unavailablePreset(action,false))return false;
     if(presetAction(action)){
       PresetShortcutConfig next=_presetShortcuts;auto &binding=next.bindings[presetBindingIndex(action,kind)];binding={};binding.kind=kind;++next.generation;
-      if(_prefs.putBytes("preset-shortcuts",&next,sizeof(next))!=sizeof(next)){error="Could not clear shortcut";return false;}
+      if(_prefs.putBytes(presetShortcutsKey,&next,sizeof(next))!=sizeof(next)){error="Could not clear shortcut";return false;}
       _presetShortcuts=next;
     }else{
       ShortcutConfig next=_shortcuts;auto &binding=next.bindings[shortcutBindingIndex(action,kind)];binding={};binding.kind=kind;++next.generation;
@@ -640,7 +644,7 @@ bool BleHid::shortcutCommand(JsonVariantConst command,JsonObject result,String &
     if(presetAction(target)){
       PresetShortcutConfig next=_presetShortcuts;next.bindings[presetBindingIndex(target,kind)]=_shortcutRecorder.candidate;++next.generation;
       if(!validShortcutSet(_shortcuts,next)){error="That combination conflicts with another shortcut";return false;}
-      if(_prefs.putBytes("preset-shortcuts",&next,sizeof(next))!=sizeof(next)){error="Could not save shortcut";return false;}
+      if(_prefs.putBytes(presetShortcutsKey,&next,sizeof(next))!=sizeof(next)){error="Could not save shortcut";return false;}
       _presetShortcuts=next;
     }else{
       ShortcutConfig next=_shortcuts;next.bindings[shortcutBindingIndex(target,kind)]=_shortcutRecorder.candidate;++next.generation;
@@ -1088,7 +1092,7 @@ bool BleHid::deletePresetCommand(JsonVariantConst request,String &error){
     if(!emptyShortcut(b)){b={};b.kind=kind;cleared=true;}}
   if(cleared){
     ++shortcuts.generation;
-    if(_prefs.putBytes("preset-shortcuts",&shortcuts,sizeof(shortcuts))!=sizeof(shortcuts)){error="Preset deleted, but its shortcuts could not be cleared";return false;}
+    if(_prefs.putBytes(presetShortcutsKey,&shortcuts,sizeof(shortcuts))!=sizeof(shortcuts)){error="Preset deleted, but its shortcuts could not be cleared";return false;}
     _presetShortcuts=shortcuts;
   }
   return true;
